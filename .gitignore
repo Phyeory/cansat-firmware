@@ -1,0 +1,9 @@
+# PlatformIO
+.pio
+.pioenvs
+.piolibdeps
+.vscode/
+__pycache__/
+*.pyc
+.DS_Store
+flight_*.csv
