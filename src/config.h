@@ -1,58 +1,68 @@
 #pragma once
 // ===================================================================
-// Celestium CanSat — pin map & flight configuration
-// Custom PCB: edit these constants to match the final board routing.
-// All I2C sensors share Wire (GP4=SDA, GP5=SCL on the Pico).
+// Celestium CanSat — STM32G474RE pin map & flight configuration
+// Mirrors stm32g474.ioc. Edit BOTH files when the PCB routing changes.
 // ===================================================================
 
-// ---- I2C ----
-constexpr uint8_t PIN_SDA = 4;
-constexpr uint8_t PIN_SCL = 5;
+#include "stm32g4xx_hal.h"
 
-// ---- RFM96W LoRa 433 MHz (SPI0) ----
-constexpr uint8_t PIN_LORA_CS   = 17;   // GP17  SPI0 CSn
-constexpr uint8_t PIN_LORA_SCK  = 18;   // GP18  SPI0 SCK
-constexpr uint8_t PIN_LORA_MOSI = 19;   // GP19  SPI0 TX
-constexpr uint8_t PIN_LORA_MISO = 16;   // GP16  SPI0 RX
-constexpr uint8_t PIN_LORA_RST  = 21;
-constexpr uint8_t PIN_LORA_DIO0 = 22;
-constexpr float   LORA_FREQ_MHZ = 434.0f;  // 433 MHz ISM band (UK); alterable, Rule 14
-constexpr int16_t LORA_TX_POWER_DB = 13;
+// ---- clock ----
+#define HCLK_HZ 170000000U      // PLL from HSI16 -> 170 MHz (max)
 
-// ---- PA1010D GPS (UART1) ----
-constexpr uint8_t PIN_GPS_TX = 8;    // Pico GP8 -> GPS RX
-constexpr uint8_t PIN_GPS_RX = 9;    // Pico GP9 -> GPS TX
-constexpr uint32_t GPS_BAUD  = 9600;
+// ---- I2C1: BMP280 (0x76), LTR390 (0x53), TSL2591 (0x29), SCD30 (0x61) ----
+#define I2C_SENSOR          hi2c1          // PB8=SCL, PB9=SDA, 400 kHz
+#define BMP280_I2C_ADDR     (0x76U << 1)
+#define LTR390_I2C_ADDR     (0x53U << 1)
+#define TSL2591_I2C_ADDR    (0x29U << 1)
+#define SCD30_I2C_ADDR      (0x61U << 1)
 
-// ---- Alphasense O3-B4 electrochemical cell (analog via ADC0) ----
-constexpr uint8_t PIN_O3_WORK = 26;  // GP26/ADC0 — working electrode
-constexpr uint8_t PIN_O3_AUX  = 27;  // GP27/ADC1 — auxiliary electrode (–ve)
-// O3-B4 sensitivity ≈ 15 nA/ppb at 20 °C; with the workshop TIA gain this
-// maps to mV. Calibrate against a known O3 source and set the factor.
-constexpr float O3_MV_PER_PPB = 1.0f;   // TODO calibrate before flight
-constexpr float O3_ZERO_MV    = 0.0f;   // zero-current offset
+// ---- SPI1: RFM96W LoRa 433 MHz ----
+#define LORA_SPI            hspi1          // PA5=SCK, PA6=MISO, PA7=MOSI
+#define LORA_CS_GPIO        GPIOB
+#define LORA_CS_PIN         GPIO_PIN_0     // PB0  (CS, active low)
+#define LORA_RST_GPIO       GPIOB
+#define LORA_RST_PIN        GPIO_PIN_1     // PB1
+#define LORA_DIO0_GPIO      GPIOA
+#define LORA_DIO0_PIN       GPIO_PIN_8     // PA8 (poll for TxDone)
+#define LORA_FREQ_HZ        434000000U     // 433 MHz ISM (UK); alterable, Rule 14
+#define LORA_TX_POWER_DB    13
 
-// ---- microSD (SPI1) ----
-constexpr uint8_t PIN_SD_CS   = 13;  // GP13
-constexpr uint8_t PIN_SD_SCK  = 10;  // GP10
-constexpr uint8_t PIN_SD_MOSI = 11;  // GP11
-constexpr uint8_t PIN_SD_MISO = 12;  // GP12
+// ---- SPI2: microSD (FatFs) ----
+#define SD_SPI              hspi2          // PB13=SCK, PB14=MISO, PB15=MOSI
+#define SD_CS_GPIO          GPIOB
+#define SD_CS_PIN           GPIO_PIN_12
 
-// ---- battery monitor (ADC2) ----
-constexpr uint8_t PIN_VBAT = 28;     // GP28/ADC2 through a 2:1 divider
-constexpr float   VBAT_DIVIDER = 2.0f;
+// ---- USART1: u-blox SAM-M8Q GPS (NMEA, 9600 8N1) ----
+#define GPS_UART            huart1         // PA9=TX, PA10=RX
 
-// ---- payload actuation (4x spoiler servos) ----
-constexpr uint8_t PIN_SERVO_A = 2;
-constexpr uint8_t PIN_SERVO_B = 3;
-constexpr uint8_t PIN_SERVO_C = 6;
-constexpr uint8_t PIN_SERVO_D = 7;
-constexpr uint8_t SERVO_STOWED_DEG  = 0;
-constexpr uint8_t SERVO_DEPLOYED_DEG = 90;
+// ---- USART2: debug / bench serial ----
+#define DEBUG_UART          huart2         // PA2=TX, PA3=RX
+
+// ---- ADC1: O3-B4 electrochemical cell + battery monitor ----
+#define O3_ADC              hadc1
+#define O3_WORK_CHANNEL     ADC_CHANNEL_1  // PA0
+#define O3_AUX_CHANNEL      ADC_CHANNEL_2  // PA1
+#define VBAT_CHANNEL        ADC_CHANNEL_15 // PC4 — VERIFY channel against .ioc
+#define VBAT_DIVIDER        2.0f           // 2:1 resistor divider
+#define VREF_V              3.3f
+#define ADC_MAX             4095.0f        // 12-bit
+
+// ---- TIM8 CH1-4: 4x payload spoiler servos (50 Hz) ----
+#define SERVO_TIM           htim8          // PC6=CH1, PC7=CH2, PC8=CH3, PC9=CH4
+#define SERVO_TIM_CHANNEL_1 TIM_CHANNEL_1
+#define SERVO_TIM_CHANNEL_2 TIM_CHANNEL_2
+#define SERVO_TIM_CHANNEL_3 TIM_CHANNEL_3
+#define SERVO_TIM_CHANNEL_4 TIM_CHANNEL_4
+#define SERVO_STOWED_US     1000U
+#define SERVO_DEPLOYED_US   2000U
 
 // ---- timing ----
-constexpr uint32_t SAMPLE_PERIOD_MS = 100;   // onboard logging rate (10 Hz)
-constexpr uint32_t TELEMETRY_PERIOD_MS = 1000;  // primary mission: 1 Hz
+#define SAMPLE_PERIOD_MS    100U    // onboard logging rate (10 Hz)
+#define TELEMETRY_PERIOD_MS 1000U   // primary mission: 1 Hz
 
 // ---- barometric altitude ----
-constexpr float SEA_LEVEL_PRESSURE_HPA = 1013.25f;  // set from launch-day reading
+#define SEA_LEVEL_PRESSURE_HPA  1013.25f   // set from launch-day reading
+
+// ---- O3-B4 conversion (calibrate before flight!) ----
+#define O3_MV_PER_PPB   1.0f   // TODO: bench calibration vs known O3 source
+#define O3_ZERO_MV      0.0f   // zero-current offset
