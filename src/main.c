@@ -1,12 +1,13 @@
 /**
- * main.c — Celestium CanSat flight firmware (STM32G474RE)
+ * main.c: Celestium CanSat flight firmware (STM32G474RE)
  *
  * Primary mission:   BMP280 temperature + pressure -> altitude, JSON
  *                    downlink at 1 Hz over 433 MHz LoRa (Rule 14 compliant).
- * Secondary mission: atmospheric radiation & gas profiling — UV, IR, CO2,
- *                    O3 vs altitude, logged to SD at 10 Hz.
+ * Secondary mission: atmospheric radiation & gas profiling (UV, IR, CO2,
+ *                    O3 vs altitude), logged to SD at 10 Hz.
  *
- * Hardware: custom PCB, STM32CubeMX config in stm32g474.ioc.
+ * Data path:  sensors --I2C/UART/ADC--> frame --JSON--> LoRa --> ground
+ *                                             \--CSV---> SD card
  */
 #include <stdio.h>
 #include <string.h>
@@ -14,6 +15,7 @@
 #include "board.h"
 #include "config.h"
 #include "telemetry.h"
+#include "i2c_dev.h"
 #include "bmp280.h"
 #include "ltr390.h"
 #include "tsl2591.h"
@@ -25,54 +27,83 @@
 #include "adc_read.h"
 
 static flight_frame_t frame;
-static uint32_t last_sample, last_telemetry;
+static uint32_t last_sample, last_telemetry, last_bmp_retry;
 
 static void sample_all(void);
+
+/* boot check: lists every device that ACKs on the sensor bus, so a wiring
+   fault shows up on the debug console instead of as silent zeros */
+static void i2c_scan(void)
+{
+    printf("[I2C] scan:");
+    int found = 0;
+    for (uint16_t a = 0x08; a < 0x78; a++) {
+        if (HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(a << 1), 2, 5) == HAL_OK) {
+            printf(" 0x%02X", a);
+            found++;
+        }
+    }
+    printf(found ? "  (expect 0x29 0x53 0x61 0x76)\r\n"
+                 : "  NONE: check SDA/SCL, pull-ups, 3V3 and GND\r\n");
+}
 
 int main(void)
 {
     board_init();
     servos_start();
+    printf("\r\n[CELESTIUM] booting\r\n");
 
+    i2c_scan();
     frame.ok_bmp = (bmp280_init(&hi2c1) == 0);
     frame.ok_ltr = (ltr390_init(&hi2c1) == 0);
     frame.ok_tsl = (tsl2591_init(&hi2c1) == 0);
     frame.ok_scd = (scd30_init(&hi2c1) == 0);
     gps_init(&huart1);
-    frame.ok_gps = 1;
-
-    if (!frame.ok_bmp) {
-        /* primary mission sensor dead — halt with fast LED heartbeat on PC6 */
-        printf("[FAIL] BMP280 init — halting\r\n");
-        while (1) { }
-    }
 
     int lora_ok = (lora_init(&hspi1) == 0);
     sdlog_init();
-    printf("[CELESTIUM] boot ok=%u%u%u%u lora=%u sd=%u\r\n",
-           frame.ok_bmp, frame.ok_ltr, frame.ok_tsl, frame.ok_scd,
-           lora_ok, sdlog_ok());
+    frame.ok_sd = sdlog_ok();
+    if (frame.ok_sd) sdlog_write(telemetry_csv_header());
 
+    printf("[CELESTIUM] bmp=%u ltr=%u tsl=%u scd=%u lora=%u sd=%u\r\n",
+           frame.ok_bmp, frame.ok_ltr, frame.ok_tsl, frame.ok_scd,
+           lora_ok, frame.ok_sd);
+    if (!lora_ok) printf("[LORA] no reply (RegVersion != 0x12): check SPI1, CS PB0, RST PB1\r\n");
+    if (!frame.ok_bmp) printf("[BMP280] missing: primary mission degraded, will keep retrying\r\n");
+
+    /* Never halt in flight: even with a dead sensor, keep sending whatever
+       still works plus GPS so the can can be found. */
     while (1) {
         uint32_t now = HAL_GetTick();
+
+        lora_busy();   /* services TxDone, cheap */
 
         if (now - last_sample >= SAMPLE_PERIOD_MS) {
             last_sample = now;
             sample_all();
 
-            char row[240];
+            char row[260];
             telemetry_csv_row(&frame, row, sizeof(row));
             sdlog_write(row);
-            printf("t=%lus T=%.1fC P=%.1fhPa alt=%.1fm CO2=%.0f UVi=%.2f\r\n",
-                   now / 1000U, frame.temp_c, frame.pressure_hpa,
-                   frame.altitude_m, frame.co2_ppm, frame.uv_index);
         }
 
         if (now - last_telemetry >= TELEMETRY_PERIOD_MS) {   /* 1 Hz downlink */
             last_telemetry = now;
-            char pkt[300];
+            frame.seq++;
+            char pkt[256];
             int n = telemetry_json(&frame, pkt, sizeof(pkt));
-            if (lora_ok && n > 0) lora_send((const uint8_t *)pkt, (uint8_t)n);
+            if (n > 0 && n < 256) {
+                if (lora_ok && lora_send((const uint8_t *)pkt, (uint8_t)n) != 0)
+                    printf("[LORA] still busy, packet %lu skipped\r\n",
+                           (unsigned long)frame.seq);
+                printf("%s\r\n", pkt);   /* same packet on the bench console */
+            }
+        }
+
+        /* recovery for the primary sensor (e.g. cracked joint, brown-out) */
+        if (!frame.ok_bmp && now - last_bmp_retry >= 2000U) {
+            last_bmp_retry = now;
+            frame.ok_bmp = (bmp280_init(&hi2c1) == 0);
         }
     }
 }
@@ -81,35 +112,45 @@ static void sample_all(void)
 {
     frame.t_ms = HAL_GetTick();
 
-    bmp280_data_t b;  bmp280_read(&hi2c1, &b);
-    frame.temp_c = b.temp_c;
-    frame.pressure_hpa = b.pressure_hpa;
-    frame.altitude_m = b.altitude_m;
+    if (frame.ok_bmp) {
+        bmp280_data_t b;  bmp280_read(&hi2c1, &b);
+        frame.temp_c       = b.temp_c;
+        frame.pressure_hpa = b.pressure_hpa;
+        frame.altitude_m   = b.altitude_m;
+    }
 
-    ltr390_data_t u;  ltr390_read(&hi2c1, &u);
-    frame.uv_raw = u.uv_raw;
-    frame.uv_index = u.uv_index;
+    if (frame.ok_ltr) {
+        ltr390_data_t u;  ltr390_read(&hi2c1, &u);
+        frame.uv_raw   = u.uv_raw;
+        frame.uv_index = u.uv_index;
+    }
 
-    tsl2591_data_t l;  tsl2591_read(&hi2c1, &l);
-    frame.ir_counts = l.ir_counts;
-    frame.full_counts = l.full_counts;
-    frame.lux = l.lux;
+    if (frame.ok_tsl) {
+        tsl2591_data_t l;  tsl2591_read(&hi2c1, &l);
+        frame.ir_counts   = l.ir_counts;
+        frame.full_counts = l.full_counts;
+        frame.lux         = l.lux;
+    }
 
-    scd30_data_t s;
-    int r = scd30_read(&hi2c1, &s);
-    if (r > 0) frame.co2_ppm = s.co2_ppm;
+    if (frame.ok_scd) {
+        scd30_data_t s;
+        if (scd30_read(&hi2c1, &s) > 0) frame.co2_ppm = s.co2_ppm;   /* new every 2 s */
+    }
 
     gps_data_t g;  gps_poll(&g);
-    frame.gps_lat = g.lat_deg;
-    frame.gps_lon = g.lon_deg;
-    frame.gps_alt_m = g.alt_m;
-    frame.gps_sats = g.sats;
-    frame.gps_fix = g.fix;
+    frame.ok_gps    = (g.sentences > 0);   /* bytes arriving = wired right */
+    frame.gps_fix   = g.fix;
+    frame.gps_sats  = g.sats;
+    if (g.fix) {
+        frame.gps_lat   = g.lat_deg;
+        frame.gps_lon   = g.lon_deg;
+        frame.gps_alt_m = g.alt_m;
+    }
 
-    /* O3-B4: differential working/auxiliary electrode in mV -> ppb */
+    /* O3-B4 via potentiostat: working minus auxiliary electrode, mV -> ppb */
     float work_mv = adc_to_v(adc_read_ch(O3_WORK_CHANNEL)) * 1000.0f;
     float aux_mv  = adc_to_v(adc_read_ch(O3_AUX_CHANNEL)) * 1000.0f;
-    frame.o3_ppb = ((work_mv - aux_mv) - O3_ZERO_MV) / O3_MV_PER_PPB;
+    frame.o3_ppb  = ((work_mv - aux_mv) - O3_ZERO_MV) / O3_MV_PER_PPB;
 
     frame.vbat_v = adc_to_v(adc_read_ch(VBAT_CHANNEL)) * VBAT_DIVIDER;
 }

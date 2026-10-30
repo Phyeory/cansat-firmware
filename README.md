@@ -7,7 +7,7 @@ running on an **STM32G474RE** on a custom PCB, configured with
 **Language/toolchain: bare C on STM32 HAL, built with PlatformIO.**
 The board is configured in `stm32g474.ioc` (CubeMX); the firmware talks to
 the peripherals directly (`HAL_I2C`, `HAL_SPI`, `HAL_UART`, `HAL_ADC`,
-`HAL_TIM`) with small self-contained drivers — no Arduino layer, no heavy
+`HAL_TIM`) with small self-contained drivers: no Arduino layer, no heavy
 vendor libraries. Embedded protocols in use: **I²C** (sensors), **SPI**
 (LoRa + SD), **UART** (GPS + debug), **PWM** (servos), analog **ADC** (O3
 cell, battery).
@@ -16,7 +16,7 @@ cell, battery).
 
 | Subsystem | Part | Interface / pins |
 |---|---|---|
-| Main computer | STM32G474RE @ 170 MHz | — |
+| Main computer | STM32G474RE @ 170 MHz | |
 | Temp + pressure (primary) | BMP280 | I²C1 (PB8/PB9) @ 0x76 |
 | UV radiation | LTR390 | I²C1 @ 0x53 |
 | IR / light | TSL2591 | I²C1 @ 0x29 |
@@ -28,14 +28,16 @@ cell, battery).
 | Actuation | 4× spoiler servos | TIM8 CH1-4 (PC6-PC9), 50 Hz PWM |
 | Battery monitor | 2:1 divider | ADC PC4 |
 
+PCB schematic and bring-up checklist: [`WIRING.md`](WIRING.md).
+
 The pin map lives in [`src/config.h`](src/config.h) and is mirrored in
-[`stm32g474.ioc`](stm32g474.ioc) — edit **both** when the PCB changes.
+[`stm32g474.ioc`](stm32g474.ioc). Edit **both** when the PCB changes.
 
 ## Missions
 
 - **Primary**: temperature + pressure → altitude, transmitted **once per
   second** as JSON over LoRa (rule-compliant, frequency alterable).
-- **Secondary**: atmospheric radiation & gas profiling — UV/IR intensity and
+- **Secondary**: atmospheric radiation & gas profiling: UV/IR intensity and
   CO₂/O₃ concentration vs altitude, logged onboard to SD at 10 Hz so data
   survives a telemetry drop.
 
@@ -54,7 +56,7 @@ pio device monitor                 # live debug output (115200, USART2)
 ```
 
 CubeMX regeneration only replaces the peripheral init (mirrored in
-`src/board.c`) — the drivers in `src/` are yours and won't be touched.
+`src/board.c`). The drivers in `src/` are yours and won't be touched.
 
 > **SD logging**: enable the FatFS middleware in CubeMX (with an SPI
 > transport), then build with `-DHAS_FATFS` (add to `build_flags`). Without
@@ -65,7 +67,7 @@ CubeMX regeneration only replaces the peripheral init (mirrored in
 ```
 stm32g474.ioc          CubeMX board configuration (open this in CubeMX)
 platformio.ini         toolchain (STM32G474RE, STM32Cube HAL)
-inc/                   stm32g4xx_hal_conf.h — HAL module selection
+inc/                   stm32g4xx_hal_conf.h, HAL module selection
 src/config.h           pin map & flight constants (edit for the PCB)
 src/board.c/.h         clock tree + all peripheral init (CubeMX mirror)
 src/main.c             flight loop: 10 Hz sampling, 1 Hz telemetry
@@ -80,30 +82,35 @@ src/servos.c/.h        spoiler servo PWM on TIM8
 src/adc_read.c/.h      polled ADC helper (O3-B4, battery)
 src/telemetry.c/.h     JSON downlink + CSV packet formats
 src/stm32g4xx_it.c     interrupt handlers (SysTick/HAL tick)
-ground-station/        Python starter: serial/LoRa listener -> CSV + live plot
+ground-station/        lora_receiver/ (Pico + RFM96W bridge) and station.py (CSV + live plot)
 ```
 
 ## Ground station
 
-Unchanged from the original build: `ground-station/station.py` receives the
-JSON telemetry packets (via a serial-to-LoRa bridge) and produces the two
-rule-required deliverables live — altitude vs time and temperature vs
-altitude — plus a CSV for post-processing.
+`ground-station/lora_receiver/` runs on a Raspberry Pi Pico with a second
+RFM96W. It receives the CanSat's LoRa packets and forwards each one over USB
+as a JSON line, with RSSI and SNR added. `ground-station/station.py` reads
+those lines and produces the two rule-required deliverables live (altitude
+vs time and temperature vs altitude), plus a CSV for post-processing. It
+also counts lost packets and shows which sensors are healthy.
 
 ```bash
 python3 -m pip install pyserial matplotlib
+python3 ground-station/station.py --list          # find the port
 python3 ground-station/station.py /dev/tty.usbmodem*
 ```
 
 ## Rules notes (2026-27)
 
-- Telemetry is exactly 1 Hz — enforced by `TELEMETRY_PERIOD_MS` in `config.h`.
+- Telemetry is exactly 1 Hz, enforced by `TELEMETRY_PERIOD_MS` in `config.h`.
 - LoRa frequency is a single constant (`LORA_FREQ_HZ`), alterable and
   declared at launch (Rule 14), default 434.0 MHz (UK 433 MHz ISM band).
+- Radio power is 10 dBm (10 mW), the UK 433 MHz limit (`LORA_TX_POWER_DB`).
 - Data redundancy: every transmitted packet is also written to the SD card.
 
 ## Pre-flight TODOs
 
+- [ ] Set the PB8/BOOT0 option bytes on every board (see `WIRING.md`).
 - [ ] Verify `stm32g474.ioc` pins against the final PCB, regenerate in CubeMX.
 - [ ] Bench-calibrate the O3-B4 constants (`O3_MV_PER_PPB`, `O3_ZERO_MV`).
 - [ ] Set `SEA_LEVEL_PRESSURE_HPA` from a launch-day barometer reading.
@@ -113,4 +120,4 @@ python3 ground-station/station.py /dev/tty.usbmodem*
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).

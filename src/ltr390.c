@@ -37,6 +37,7 @@ void ltr390_read(I2C_HandleTypeDef *bus, ltr390_data_t *d)
     }
     d->uv_raw = (float)((uint32_t)buf[0] | (uint32_t)buf[1] << 8 |
                         (uint32_t)buf[2] << 16);
-    /* 18-bit / gain-3 scaling: ~2300 counts per UV index unit */
-    d->uv_index = d->uv_raw / 2300.0f;
+    /* datasheet: 2300 counts/UVI at gain 18, 20-bit. Scale to gain 3,
+       18-bit: 2300 * (3/18) * (2^18/2^20) = ~95.8 counts per UVI */
+    d->uv_index = d->uv_raw / (2300.0f * (3.0f / 18.0f) * 0.25f);
 }

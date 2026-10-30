@@ -11,7 +11,8 @@
 
 #define ENABLE_POWERON  0x01
 #define ENABLE_AEN      0x02
-#define TIMING_300MS    0x01               /* 0..5 -> 100..600 ms */
+#define TIMING_300MS    0x02               /* 0..5 -> 100..600 ms */
+#define GAIN_MEDIUM     0x10               /* bits 5:4 = 01 -> 25x */
 
 int tsl2591_init(I2C_HandleTypeDef *bus)
 {
@@ -24,7 +25,7 @@ int tsl2591_init(I2C_HandleTypeDef *bus)
     i2c_write_reg(bus, TSL2591_ADDR, TSL2591_COMMAND_BIT | TSL2591_ENABLE,
                   ENABLE_POWERON | ENABLE_AEN);
     i2c_write_reg(bus, TSL2591_ADDR, TSL2591_COMMAND_BIT | TSL2591_CONFIG,
-                  (0x02 << 4) | TIMING_300MS);   /* medium gain, 300 ms */
+                  GAIN_MEDIUM | TIMING_300MS);  /* 25x gain, 300 ms */
     return 0;
 }
 

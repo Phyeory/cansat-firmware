@@ -1,4 +1,5 @@
-/* Interrupt handlers — SysTick drives the HAL tick; everything else polls. */
+/* Interrupt handlers. SysTick drives the HAL tick; USART1 (GPS RX) lives in
+   gps_sam_m8q.c; everything else polls. */
 #include "stm32g4xx_hal.h"
 
 void SysTick_Handler(void)
@@ -13,4 +14,4 @@ void BusFault_Handler(void)   { while (1) { } }
 void UsageFault_Handler(void) { while (1) { } }
 
 void Error_Handler(void);
-void Error_Handler(void) { while (1) { } }
+void Error_Handler(void) { __disable_irq(); while (1) { } }

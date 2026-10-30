@@ -1,5 +1,6 @@
 #include "sdlog.h"
 #include <stdio.h>
+#include <string.h>
 
 #ifdef HAS_FATFS
 
@@ -34,7 +35,7 @@ void sdlog_write(const char *row)
 
 uint8_t sdlog_ok(void) { return ok; }
 
-#else  /* !HAS_FATFS — logging disabled, firmware still flies */
+#else  /* !HAS_FATFS: logging disabled, firmware still flies */
 
 void sdlog_init(void) {}
 void sdlog_write(const char *row) { (void)row; }

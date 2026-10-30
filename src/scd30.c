@@ -1,6 +1,7 @@
 #include "scd30.h"
 #include "i2c_dev.h"
 #include "config.h"
+#include <string.h>
 
 #define SCD30_ADDR       SCD30_I2C_ADDR
 #define CMD_START_CONT   0x0010   /* start continuous measurement */
@@ -28,15 +29,21 @@ static HAL_StatusTypeDef read_words(I2C_HandleTypeDef *bus, uint16_t cmd,
     uint8_t c[2] = { (uint8_t)(cmd >> 8), (uint8_t)(cmd & 0xFF) };
     if (HAL_I2C_Master_Transmit(bus, SCD30_ADDR, c, 2, 100) != HAL_OK)
         return HAL_ERROR;
+    HAL_Delay(4);   /* SCD30 needs >= 3 ms between command and read */
     return HAL_I2C_Master_Receive(bus, SCD30_ADDR, out, nwords * 3, 100);
 }
 
 int scd30_init(I2C_HandleTypeDef *bus)
 {
-    /* chip-id check: read firmware version (cmd 0xD100) — some units NACK it;
-       treat a NACK on any command below as "sensor absent" */
-    uint16_t asc = 1;   /* enable ASC — good for outdoor flights */
-    if (cmd16(bus, CMD_ASC, &asc, 1) != HAL_OK) return -1;
+    /* SCD30 needs up to 2 s after power-up before it answers on I2C.
+       A NACK after that means "sensor absent". */
+    uint16_t asc = 1;   /* enable ASC, good for outdoor flights */
+    int tries = 0;
+    while (cmd16(bus, CMD_ASC, &asc, 1) != HAL_OK) {
+        if (++tries > 25) return -1;
+        HAL_Delay(100);
+    }
+    HAL_Delay(5);
 
     uint16_t start = 0; /* 0 => default 2 s interval */
     if (cmd16(bus, CMD_START_CONT, &start, 1) != HAL_OK) return -2;

@@ -1,5 +1,5 @@
 #MicroXplorer Configuration settings - do not modify
-# Celestium CanSat — STM32G474RE custom PCB
+# Celestium CanSat: STM32G474RE custom PCB
 # Open in STM32CubeMX, verify against PCB routing, GENERATE CODE.
 Mcu.Name=STM32G474RETx
 Mcu.Family=STM32G4
@@ -46,8 +46,8 @@ RCC.PLLRCLKFreq_Value=170000000
 RCC.SYSCLKSource=RCC_SYSCLKSOURCE_PLLCLK
 RCC.SYSCLKFreq_VALUE=170000000
 RCC.UsbFsFreq_Value=48
-PA0.Signal=ADC1_IN1
-PA1.Signal=ADC1_IN2
+PA0.Signal=ADC2_IN1
+PA1.Signal=ADC2_IN2
 PA2.Signal=USART2_TX
 PA3.Signal=USART2_RX
 PA4.Signal=ADC1_IN9
@@ -65,16 +65,16 @@ PB14.Signal=SPI2_MISO
 PB15.Signal=SPI2_MOSI
 PB8.Signal=I2C1_SCL
 PB9.Signal=I2C1_SDA
-PC4.Signal=ADC1_IN15
+PC4.Signal=ADC2_IN5
 PC6.Signal=TIM8_CH1
 PC7.Signal=TIM8_CH2
 PC8.Signal=TIM8_CH3
 PC9.Signal=TIM8_CH4
-ADC1.Rank-0\#ChannelRegularConversion=1
-ADC1.SamplingTime-0\#ChannelRegularConversion=ADC_SAMPLETIME_47CYCLES_5
+ADC2.Rank-0\#ChannelRegularConversion=1
+ADC2.SamplingTime-0\#ChannelRegularConversion=ADC_SAMPLETIME_47CYCLES_5
 IP1=I2C1
 I2C1.IPParameters=ClockSpeed
-I2C1.ClockSpeed=400000
+I2C1.ClockSpeed=100000
 SPI1.CalculateBaudRate=21.25
 SPI2.CalculateBaudRate=21.25
 USART1.BaudRate=9600
