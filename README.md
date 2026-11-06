@@ -22,6 +22,10 @@ cell, battery).
 | IR / light | TSL2591 | I²C1 @ 0x29 |
 | CO₂ | SCD30 | I²C1 @ 0x61 |
 | Ozone | Alphasense O3-B4 | ADC (PA0 work / PA1 aux, differential) |
+| IMU (accel + gyro) | Bosch BMI270 | I²C1 @ 0x68 (needs 8 KB config upload) |
+| Magnetometer | Melexis MLX90395 | I²C1 @ 0x0C |
+| Humidity + 2nd temp | Sensirion SHT45 | I²C1 @ 0x44 |
+| Radiation counter | BPW34 S-Z + comparator | EXTI PB10 (falling-edge pulses) |
 | GPS | u-blox SAM-M8Q | USART1 (PA9/PA10) NMEA 9600 |
 | Telemetry | RFM96W LoRa 433 MHz | SPI1 + PB0 CS, PB1 RST, PA8 DIO0 |
 | Logging | microSD | SPI2 (PB13-15), PB12 CS |
@@ -38,8 +42,11 @@ The pin map lives in [`src/config.h`](src/config.h) and is mirrored in
 - **Primary**: temperature + pressure → altitude, transmitted **once per
   second** as JSON over LoRa (rule-compliant, frequency alterable).
 - **Secondary**: atmospheric radiation & gas profiling: UV/IR intensity and
-  CO₂/O₃ concentration vs altitude, logged onboard to SD at 10 Hz so data
-  survives a telemetry drop.
+  CO₂/O₃ concentration vs altitude, plus motion profiling (BMI270 IMU,
+  MLX90395 magnetometer), humidity (SHT45 → dew point / absolute humidity
+  post-flight) and BPW34 radiation pulse counting. Full 10 Hz stream goes
+  to SD so data survives a telemetry drop; the 1 Hz downlink also carries
+  accel, gyro, RH and pulses-per-second for live monitoring.
 
 ## Getting started (CubeMX workflow)
 

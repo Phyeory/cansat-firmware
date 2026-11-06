@@ -4,7 +4,9 @@
  * Primary mission:   BMP280 temperature + pressure -> altitude, JSON
  *                    downlink at 1 Hz over 433 MHz LoRa (Rule 14 compliant).
  * Secondary mission: atmospheric radiation & gas profiling (UV, IR, CO2,
- *                    O3 vs altitude), logged to SD at 10 Hz.
+ *                    O3 vs altitude), motion profiling (BMI270, MLX90395),
+ *                    humidity (SHT45) and BPW34 radiation counting, all
+ *                    logged to SD at 10 Hz.
  *
  * Data path:  sensors --I2C/UART/ADC--> frame --JSON--> LoRa --> ground
  *                                             \--CSV---> SD card
@@ -20,6 +22,10 @@
 #include "ltr390.h"
 #include "tsl2591.h"
 #include "scd30.h"
+#include "bmi270.h"
+#include "mlx90395.h"
+#include "sht45.h"
+#include "rad_counter.h"
 #include "gps_sam_m8q.h"
 #include "lora_sx1276.h"
 #include "sdlog.h"
@@ -27,7 +33,9 @@
 #include "adc_read.h"
 
 static flight_frame_t frame;
-static uint32_t last_sample, last_telemetry, last_bmp_retry;
+static uint32_t last_sample, last_telemetry, last_retry;
+static uint32_t last_sht_trigger;
+static uint8_t  sht_pending;
 
 static void sample_all(void);
 
@@ -43,7 +51,7 @@ static void i2c_scan(void)
             found++;
         }
     }
-    printf(found ? "  (expect 0x29 0x53 0x61 0x76)\r\n"
+    printf(found ? "  (expect 0x0C 0x29 0x44 0x53 0x61 0x68 0x76)\r\n"
                  : "  NONE: check SDA/SCL, pull-ups, 3V3 and GND\r\n");
 }
 
@@ -58,6 +66,10 @@ int main(void)
     frame.ok_ltr = (ltr390_init(&hi2c1) == 0);
     frame.ok_tsl = (tsl2591_init(&hi2c1) == 0);
     frame.ok_scd = (scd30_init(&hi2c1) == 0);
+    frame.ok_bmi = (bmi270_init(&hi2c1) == 0);
+    frame.ok_mlx = (mlx90395_init(&hi2c1) == 0);
+    frame.ok_sht = (sht45_init(&hi2c1) == 0);
+    rad_counter_start();
     gps_init(&huart1);
 
     int lora_ok = (lora_init(&hspi1) == 0);
@@ -65,9 +77,12 @@ int main(void)
     frame.ok_sd = sdlog_ok();
     if (frame.ok_sd) sdlog_write(telemetry_csv_header());
 
-    printf("[CELESTIUM] bmp=%u ltr=%u tsl=%u scd=%u lora=%u sd=%u\r\n",
+    printf("[CELESTIUM] bmp=%u ltr=%u tsl=%u scd=%u bmi=%u mlx=%u sht=%u "
+           "lora=%u sd=%u\r\n",
            frame.ok_bmp, frame.ok_ltr, frame.ok_tsl, frame.ok_scd,
-           lora_ok, frame.ok_sd);
+           frame.ok_bmi, frame.ok_mlx, frame.ok_sht, lora_ok, frame.ok_sd);
+    if (!frame.ok_bmi)
+        printf("[BMI270] missing or config load failed: check addr 0x68 and the config upload\r\n");
     if (!lora_ok) printf("[LORA] no reply (RegVersion != 0x12): check SPI1, CS PB0, RST PB1\r\n");
     if (!frame.ok_bmp) printf("[BMP280] missing: primary mission degraded, will keep retrying\r\n");
 
@@ -82,7 +97,7 @@ int main(void)
             last_sample = now;
             sample_all();
 
-            char row[260];
+            char row[340];
             telemetry_csv_row(&frame, row, sizeof(row));
             sdlog_write(row);
         }
@@ -90,6 +105,8 @@ int main(void)
         if (now - last_telemetry >= TELEMETRY_PERIOD_MS) {   /* 1 Hz downlink */
             last_telemetry = now;
             frame.seq++;
+            frame.rad_cps = (uint16_t)rad_counter_latch();
+            frame.ok_rad  = rad_counter_active();
             char pkt[256];
             int n = telemetry_json(&frame, pkt, sizeof(pkt));
             if (n > 0 && n < 256) {
@@ -100,17 +117,22 @@ int main(void)
             }
         }
 
-        /* recovery for the primary sensor (e.g. cracked joint, brown-out) */
-        if (!frame.ok_bmp && now - last_bmp_retry >= 2000U) {
-            last_bmp_retry = now;
-            frame.ok_bmp = (bmp280_init(&hi2c1) == 0);
+        /* recovery for sensors that dropped off the bus (cracked joint,
+           brown-out): every 2 s give them another shot */
+        if (now - last_retry >= 2000U) {
+            last_retry = now;
+            if (!frame.ok_bmp) frame.ok_bmp = (bmp280_init(&hi2c1) == 0);
+            if (!frame.ok_bmi) frame.ok_bmi = (bmi270_init(&hi2c1) == 0);
+            if (!frame.ok_mlx) frame.ok_mlx = (mlx90395_init(&hi2c1) == 0);
+            if (!frame.ok_sht) frame.ok_sht = (sht45_init(&hi2c1) == 0);
         }
     }
 }
 
 static void sample_all(void)
 {
-    frame.t_ms = HAL_GetTick();
+    uint32_t now = HAL_GetTick();
+    frame.t_ms = now;
 
     if (frame.ok_bmp) {
         bmp280_data_t b;  bmp280_read(&hi2c1, &b);
@@ -135,6 +157,38 @@ static void sample_all(void)
     if (frame.ok_scd) {
         scd30_data_t s;
         if (scd30_read(&hi2c1, &s) > 0) frame.co2_ppm = s.co2_ppm;   /* new every 2 s */
+    }
+
+    if (frame.ok_bmi) {
+        bmi270_data_t m;
+        if (bmi270_read(&hi2c1, &m) > 0) {
+            frame.acc_x = m.acc_x;  frame.acc_y = m.acc_y;  frame.acc_z = m.acc_z;
+            frame.gyr_x = m.gyr_x;  frame.gyr_y = m.gyr_y;  frame.gyr_z = m.gyr_z;
+        }
+    }
+
+    if (frame.ok_mlx) {
+        mlx90395_data_t m;
+        if (mlx90395_read(&hi2c1, &m) > 0) {
+            frame.mag_x = m.mag_x;  frame.mag_y = m.mag_y;  frame.mag_z = m.mag_z;
+        }
+    }
+
+    /* SHT45 single-shot: trigger on this tick, read on the next (100 ms
+       later), so the 8.3 ms conversion never blocks the loop */
+    if (frame.ok_sht) {
+        if (now - last_sht_trigger >= 1000U) {
+            last_sht_trigger = now;
+            sht45_trigger(&hi2c1);
+            sht_pending = 1;
+        } else if (sht_pending) {
+            sht45_data_t h;
+            if (sht45_read(&hi2c1, &h) == 1) {
+                frame.hum_pct    = h.rh_pct;
+                frame.hum_temp_c = h.temp_c;
+            }
+            sht_pending = 0;
+        }
     }
 
     gps_data_t g;  gps_poll(&g);

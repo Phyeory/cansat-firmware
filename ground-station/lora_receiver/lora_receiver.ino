@@ -26,7 +26,7 @@
 // ---- must match the CanSat (src/config.h) ----
 const long FREQ_HZ      = 434000000;
 const int  SF           = 7;
-const long BW_HZ        = 125000;
+const long BW_HZ        = 250000;   // config.h LORA_BW_CODE 0x08
 const int  CR_DENOM     = 5;      // 4/5
 const int  PREAMBLE     = 8;
 const int  SYNC_WORD    = 0x12;

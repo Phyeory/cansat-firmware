@@ -33,10 +33,13 @@ try:
 except ImportError:
     PLOT = False  # still log to CSV without plotting
 
-FIELDS = ["rx_time", "n", "t", "T", "P", "A", "uv", "uvi", "ir", "lux",
-          "co2", "o3", "la", "lo", "ga", "s", "v", "h", "rssi", "snr"]
+FIELDS = ["rx_time", "n", "t", "T", "P", "A", "uv",
+          "co2", "o3", "la", "lo", "ga", "s",
+          "ax", "ay", "az", "gx", "gy", "gz", "rh", "rad",
+          "v", "h", "rssi", "snr"]
 
-HEALTH_BITS = ["BMP", "LTR", "TSL", "SCD", "GPSdata", "GPSfix", "SD"]
+HEALTH_BITS = ["BMP", "LTR", "TSL", "SCD", "GPSdata", "GPSfix", "SD",
+               "BMI", "MLX", "SHT", "RAD"]
 
 
 def health_str(h):
@@ -151,7 +154,8 @@ def main():
                 rows["T"].append(pkt.get("T", float("nan")))
 
                 print(f"[{now:%H:%M:%S}] #{n} alt={pkt.get('A')}m T={pkt.get('T')}C "
-                      f"P={pkt.get('P')}hPa co2={pkt.get('co2')} uvi={pkt.get('uvi')} "
+                      f"P={pkt.get('P')}hPa co2={pkt.get('co2')} az={pkt.get('az')} "
+                      f"rh={pkt.get('rh')} rad={pkt.get('rad')} "
                       f"sats={pkt.get('s')} V={pkt.get('v')} rssi={pkt.get('rssi')} "
                       f"snr={pkt.get('snr')} loss={loss:.0f}%  [{health_str(pkt.get('h'))}]")
 

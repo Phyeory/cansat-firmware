@@ -28,7 +28,7 @@ never runs**. Fix once per chip, before anything else, in
 
 ## 2. I2C sensor bus (I2C1, 100 kHz)
 
-All four sensors share SCL = **PB8** and SDA = **PB9**.
+All seven sensors share SCL = **PB8** and SDA = **PB9**.
 
 - [ ] **One** 4.7 kΩ pull-up from SCL to 3V3 and **one** from SDA to 3V3.
       Bare chips have none built in. The MCU's internal pull-ups are only
@@ -41,6 +41,9 @@ All four sensors share SCL = **PB8** and SDA = **PB9**.
 | LTR390 | SCL = PB8, SDA = PB9 | INT unused; leave unconnected or pulled up. | 0x53 (fixed) |
 | TSL2591 | SCL = PB8, SDA = PB9 | INT unused; leave unconnected or pulled up. | 0x29 (fixed) |
 | SCD30 | TX/SCL = PB8, RX/SDA = PB9 | **SEL → GND or floating** (I2C mode). RDY and PWM unused. | 0x61 (fixed) |
+| BMI270 | SCL = PB8, SDA = PB9 | **SDO → GND** for 0x68 (SDO → 3V3 = 0x69: change `BMI270_I2C_ADDR`). PS → 3V3. | 0x68 |
+| MLX90395 | SCL = PB8, SDA = PB9 | **A1 → GND, A0 → GND** for 0x0C. INT unused. | 0x0C |
+| SHT45 | SCL = PB8, SDA = PB9 | No strapping pins; VDD and VDDIO on 3V3. | 0x44 (fixed) |
 
 The SCD30 is why the bus runs at 100 kHz: it isn't rated for 400 kHz and
 it uses clock stretching.
@@ -56,7 +59,22 @@ a potentiostat front end (op-amps doing the job of Alphasense's ISB).
 - [ ] Both outputs can never exceed 3.3 V.
 - [ ] 100 nF from PA0 and PA1 to GND helps the ADC settle.
 
-## 4. Battery monitor
+## 4. Radiation pulse counter (BPW34 S-Z + comparator)
+
+A bare photodiode cannot drive a GPIO — the PCB needs a front end:
+
+- [ ] BPW34 S-Z photodiode into a **transimpedance amplifier** (feedback
+      resistor ~1-10 MΩ for pulse work) with a reverse-bias option.
+- [ ] TIA output into a **comparator** (e.g. TLV7011) thresholded just above
+      the noise floor; open-drain output preferred.
+- [ ] Comparator output → **PB10** (EXTI10). Internal pull-up holds it high;
+      every pulse pulls it low. Never drive it push-pull from an op-amp
+      powered off 5 V.
+- [ ] 100 nF at the TIA supply pin; guard-ring / keep the input node short.
+- [ ] Bench check: tapping a bright light at the diode should make the
+      `rad` field in the JSON climb.
+
+## 5. Battery monitor
 
 - [ ] Battery + → 100 kΩ → **PC4** → 100 kΩ → GND (2:1 divider).
 - [ ] 100 nF from PC4 to GND.
@@ -64,7 +82,7 @@ a potentiostat front end (op-amps doing the job of Alphasense's ISB).
 
 PC4 is ADC2_IN5 and is **not** on ADC1.
 
-## 5. GPS (u-blox SAM-M8Q, USART1, 9600 baud)
+## 6. GPS (u-blox SAM-M8Q, USART1, 9600 baud)
 
 | SAM-M8Q pin | Net |
 |---|---|
@@ -81,7 +99,7 @@ PC4 is ADC2_IN5 and is **not** on ADC1.
       integration manual. Nothing tall or metal over the antenna face.
 - [ ] The antenna faces the sky when the can is in flight orientation.
 
-## 6. Radio (RFM96W LoRa, SPI1)
+## 7. Radio (RFM96W LoRa, SPI1)
 
 | RFM96W pin | Net |
 |---|---|
@@ -97,7 +115,7 @@ PC4 is ADC2_IN5 and is **not** on ADC1.
 
 - [ ] **Never transmit without an antenna attached.** It can damage the PA.
 
-## 7. microSD (SPI2)
+## 8. microSD (SPI2)
 
 | Socket pin | Net |
 |---|---|
@@ -108,7 +126,7 @@ PC4 is ADC2_IN5 and is **not** on ADC1.
 | VDD | 3V3, with 10 µF + 100 nF |
 | VSS | GND |
 
-## 8. Spoiler servos (TIM8 PWM)
+## 9. Spoiler servos (TIM8 PWM)
 
 - [ ] Signal pads on **PC6, PC7, PC8, PC9** (CH1 to CH4).
 - [ ] Servo power from a separate 5 V regulator/BEC, never the 3V3 rail.
@@ -122,13 +140,17 @@ PC4 is ADC2_IN5 and is **not** on ADC1.
 3. **Set the option bytes** (PB8/BOOT0 fix above) over SWD.
 4. **Flash** (`pio run -t upload`) and open the console (`pio device monitor`).
 5. **Read the boot report:**
-   - I2C scan should list `0x29 0x53 0x61 0x76`. A missing address means
-     that chip's solder joints, strapping pins or power.
+   - I2C scan should list `0x0C 0x29 0x44 0x53 0x61 0x68 0x76`. A missing
+     address means that chip's solder joints, strapping pins or power.
    - `NONE` means the pull-ups, PB8/PB9 routing or the 3V3 rail.
    - `lora=1` means the radio answered over SPI. `lora=0` means check
      SPI1, PB0 and PB1 joints.
 6. **Watch the JSON lines.** `"h"` is the health bitmask: bit0 BMP, 1 LTR,
-   2 TSL, 3 SCD, 4 GPS data arriving, 5 GPS fix, 6 SD. All sensors + GPS
-   data with no fix yet = 31. With a fix = 63.
+   2 TSL, 3 SCD, 4 GPS data arriving, 5 GPS fix, 6 SD, 7 BMI270, 8 MLX90395,
+   9 SHT45, 10 RAD counter (1 = a pulse seen in the last 60 s). All
+   sensors + GPS data with no fix yet = 991; with a fix = 1023. Bit 10
+   only lights once the BPW34 front end pulses. The BMI270
+   also refuses to produce data until its 8 KB config upload finishes —
+   if `bmi=0` in the boot report, check the 0x68 ack first.
 7. **Ground side:** flash `ground-station/lora_receiver`, run `station.py`,
    and check the same packets arrive with RSSI.
