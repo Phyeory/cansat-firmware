@@ -12,10 +12,7 @@
 
 // ---- I2C1: BMP280 (0x76), LTR390 (0x53), TSL2591 (0x29), SCD30 (0x61),
 //             BMI270 (0x68), MLX90395 (0x0C), SHT45 (0x44) ----
-// PB8=SCL (AF4), PB9=SDA (AF4), open-drain, 4.7k pull-ups to 3V3.
-// Bus runs at 100 kHz because the SCD30 is only specified up to 100 kHz.
-// I2C1 kernel clock = HSI16, so this timing value does not depend on SYSCLK.
-#define I2C_SENSOR          hi2c1
+// PB8=SCL (AF4), PB9=SDA (AF4), 4.7k pull-ups to 3V3, 100 kHz (SCD30 limit).
 #define I2C_TIMING_100K     0x00303D5BU    // 100 kHz @ 16 MHz kernel clock
 #define BMP280_I2C_ADDR     (0x76U << 1)
 #define LTR390_I2C_ADDR     (0x53U << 1)
@@ -38,9 +35,8 @@
 // use exactly the same values or it will hear nothing.
 #define LORA_FREQ_HZ        434000000U     // 433 MHz ISM (UK); alterable, Rule 14
 #define LORA_SF             7              // spreading factor 7..12
-#define LORA_BW_CODE        0x08           // 0x08 = 250 kHz (fits the ~250 B
-                                           // packet with the IMU fields; 0x07
-                                           // = 125 kHz would cap it at 222 B)
+#define LORA_BW_CODE        0x08           // 0x08 = 250 kHz (125 kHz caps the
+                                           // packet at 222 B — too small; see telemetry.c)
 #define LORA_CR_CODE        0x01           // 0x01 = coding rate 4/5
 #define LORA_PREAMBLE       8
 #define LORA_SYNC_WORD      0x12           // private-network default
@@ -81,10 +77,9 @@
 #define SERVO_DEPLOYED_US   2000U
 
 // ---- BPW34 S-Z radiation pulse counter ----
-// The photodiode feeds a transimpedance amp + comparator on the PCB; the
-// open-drain comparator output pulls this input low per pulse. EXTI10.
+// Photodiode -> TIA + open-drain comparator on the PCB; pulls low per pulse.
 #define RAD_INPUT_GPIO      GPIOB
-#define RAD_INPUT_PIN       GPIO_PIN_10    // PB10 (EXTI15_10_IRQn)
+#define RAD_INPUT_PIN       GPIO_PIN_10    // PB10 (EXTI10)
 
 // ---- timing ----
 #define SAMPLE_PERIOD_MS    100U    // onboard logging rate (10 Hz)

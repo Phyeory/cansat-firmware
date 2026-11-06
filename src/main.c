@@ -3,17 +3,14 @@
  *
  * Primary mission:   BMP280 temperature + pressure -> altitude, JSON
  *                    downlink at 1 Hz over 433 MHz LoRa (Rule 14 compliant).
- * Secondary mission: atmospheric radiation & gas profiling (UV, IR, CO2,
- *                    O3 vs altitude), motion profiling (BMI270, MLX90395),
- *                    humidity (SHT45) and BPW34 radiation counting, all
- *                    logged to SD at 10 Hz.
+ * Secondary mission: gas profiling (UV, IR, CO2, O3), motion (BMI270,
+ *                    MLX90395), humidity (SHT45) and BPW34 radiation
+ *                    counting, all logged to SD at 10 Hz.
  *
  * Data path:  sensors --I2C/UART/ADC--> frame --JSON--> LoRa --> ground
  *                                             \--CSV---> SD card
  */
 #include <stdio.h>
-#include <string.h>
-#include <math.h>
 #include "board.h"
 #include "config.h"
 #include "telemetry.h"
@@ -34,8 +31,6 @@
 
 static flight_frame_t frame;
 static uint32_t last_sample, last_telemetry, last_retry;
-static uint32_t last_sht_trigger;
-static uint8_t  sht_pending;
 
 static void sample_all(void);
 
@@ -117,8 +112,7 @@ int main(void)
             }
         }
 
-        /* recovery for sensors that dropped off the bus (cracked joint,
-           brown-out): every 2 s give them another shot */
+        /* re-init any sensor that dropped off the bus, every 2 s */
         if (now - last_retry >= 2000U) {
             last_retry = now;
             if (!frame.ok_bmp) frame.ok_bmp = (bmp280_init(&hi2c1) == 0);
@@ -131,8 +125,7 @@ int main(void)
 
 static void sample_all(void)
 {
-    uint32_t now = HAL_GetTick();
-    frame.t_ms = now;
+    frame.t_ms = HAL_GetTick();
 
     if (frame.ok_bmp) {
         bmp280_data_t b;  bmp280_read(&hi2c1, &b);
@@ -174,20 +167,11 @@ static void sample_all(void)
         }
     }
 
-    /* SHT45 single-shot: trigger on this tick, read on the next (100 ms
-       later), so the 8.3 ms conversion never blocks the loop */
     if (frame.ok_sht) {
-        if (now - last_sht_trigger >= 1000U) {
-            last_sht_trigger = now;
-            sht45_trigger(&hi2c1);
-            sht_pending = 1;
-        } else if (sht_pending) {
-            sht45_data_t h;
-            if (sht45_read(&hi2c1, &h) == 1) {
-                frame.hum_pct    = h.rh_pct;
-                frame.hum_temp_c = h.temp_c;
-            }
-            sht_pending = 0;
+        sht45_data_t h;
+        if (sht45_poll(&hi2c1, &h) == 1) {
+            frame.rh_pct    = h.rh_pct;
+            frame.sht_temp_c = h.temp_c;
         }
     }
 

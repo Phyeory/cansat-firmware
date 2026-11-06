@@ -11,12 +11,8 @@ uint16_t telemetry_health(const flight_frame_t *f)
                       (f->ok_rad ? 1024 : 0));
 }
 
-/* Same JSON keys as before plus "n" (sequence), "h" (health) and the IMU /
-   humidity / radiation fields. "uvi", "lux", "ir", the magnetometer and the
-   SHT45 temperature stay SD-only (all derivable or low-value live) to keep
-   the worst-case in-flight packet ~241 bytes, under the 253-byte LoRa
-   payload limit at SF7 / 250 kHz (SF7/125 kHz caps at 222 B — do not
-   downgrade the bandwidth without re-checking this budget). */
+/* "uvi", "lux", "ir", mag and sht_temp stay SD-only to keep the worst-case
+   in-flight packet (~247 B) under the 253 B LoRa cap at SF7 / 250 kHz. */
 int telemetry_json(const flight_frame_t *f, char *buf, int n)
 {
     return snprintf(buf, n,
@@ -35,7 +31,7 @@ int telemetry_json(const flight_frame_t *f, char *buf, int n)
         f->gps_lat, f->gps_lon, f->gps_alt_m, f->gps_sats,
         f->acc_x, f->acc_y, f->acc_z,
         f->gyr_x, f->gyr_y, f->gyr_z,
-        f->hum_pct, (unsigned)f->rad_cps,
+        f->rh_pct, (unsigned)f->rad_cps,
         f->vbat_v, telemetry_health(f));
 }
 
@@ -44,7 +40,7 @@ const char *telemetry_csv_header(void)
     return "t_ms,temp_c,pressure_hpa,alt_m,uv_raw,uv_index,ir_counts,"
            "full_counts,lux,co2_ppm,o3_ppb,lat,lon,gps_alt_m,sats,vbat_v,"
            "acc_x,acc_y,acc_z,gyr_x,gyr_y,gyr_z,mag_x,mag_y,mag_z,"
-           "rh_pct,hum_temp_c,rad_cps,health";
+           "rh_pct,sht_temp_c,rad_cps,health";
 }
 
 void telemetry_csv_row(const flight_frame_t *f, char *buf, int n)
@@ -60,6 +56,6 @@ void telemetry_csv_row(const flight_frame_t *f, char *buf, int n)
         f->gps_lat, f->gps_lon, f->gps_alt_m, f->gps_sats, f->vbat_v,
         f->acc_x, f->acc_y, f->acc_z, f->gyr_x, f->gyr_y, f->gyr_z,
         f->mag_x, f->mag_y, f->mag_z,
-        f->hum_pct, f->hum_temp_c, (unsigned)f->rad_cps,
+        f->rh_pct, f->sht_temp_c, (unsigned)f->rad_cps,
         telemetry_health(f));
 }

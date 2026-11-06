@@ -46,22 +46,38 @@ def build_synthetic(tmp: Path):
     uvi = 0.3 + 3.2 * alt / 800.0 + RNG.normal(0, 0.05, t.size)
     vbat = 4.1 - 0.4 * t / 300.0
     gps_fix = t > 25.0
-    health = (1 | 2 | 4 | 8 | 64) | np.where(t > 5, 16, 0) | np.where(gps_fix, 32, 0)
+    # bits 0..10; RAD (bit 10) stays off: no pulses on the bench
+    health = (1 | 2 | 4 | 8 | 64 | 128 | 256 | 512) \
+        | np.where(t > 5, 16, 0) | np.where(gps_fix, 32, 0)
+    acc_z = np.where(t < 10.0, 9.81, np.where(t < 76.667, 12.0 + 9.81,
+                                             9.81 - 8.0)) \
+        + RNG.normal(0, 0.2, t.size)
+    rh = np.clip(60.0 - 30.0 * alt / 800.0 + RNG.normal(0, 1.0, t.size), 0, 100)
+    rad = np.round(2.0 + 10.0 * alt / 800.0 + RNG.normal(0, 0.5, t.size))
 
     # --- SD log (firmware telemetry_csv_header order) ---
     sd = tmp / "SD_LOG.csv"
     sd.write_text(
         "t_ms,temp_c,pressure_hpa,alt_m,uv_raw,uv_index,ir_counts,full_counts,"
-        "lux,co2_ppm,o3_ppb,lat,lon,gps_alt_m,sats,vbat_v,health\n"
+        "lux,co2_ppm,o3_ppb,lat,lon,gps_alt_m,sats,vbat_v,"
+        "acc_x,acc_y,acc_z,gyr_x,gyr_y,gyr_z,mag_x,mag_y,mag_z,"
+        "rh_pct,sht_temp_c,rad_cps,health\n"
         + "\n".join(
             f"{int(round(t_i*1000))},{T:.2f},{P:.2f},{h:.2f},{u*1000:.1f},{u:.2f},"
             f"{ir:.1f},{full:.1f},{lux:.1f},{c:.0f},{o:.1f},"
-            f"{50.85:.5f},{-0.35:.5f},{h_i+8.0:.1f},{sats},{v:.2f},{hh}"
-            for t_i, T, P, h, u, ir, full, lux, c, o, h_i, sats, v, hh in zip(
+            f"{50.85:.5f},{-0.35:.5f},{h_i+8.0:.1f},{sats},{v:.2f},"
+            f"{0.3:.2f},{-0.1:.2f},{az:.2f},{gx:.1f},{gy:.1f},{gz:.1f},"
+            f"{48.0:.1f},{2.0:.1f},{-41.0:.1f},{r:.1f},{T+0.3:.2f},{rd:.0f},{hh}"
+            for t_i, T, P, h, u, ir, full, lux, c, o, h_i, sats, v,
+                az, gx, gy, gz, r, rd, hh in zip(
                 t, temp, press, alt,
                 uvi, 500 + 2000 * alt / 800 + RNG.normal(0, 5, t.size),
                 3000 + 9000 * alt / 800, 300 + 9000 * alt / 800,
-                co2, o3_mv, alt, np.where(gps_fix, 7, 0), vbat, health))
+                co2, o3_mv, alt, np.where(gps_fix, 7, 0), vbat,
+                acc_z,
+                RNG.normal(0, 2.0, t.size), RNG.normal(0, 2.0, t.size),
+                RNG.normal(0, 2.0, t.size),
+                rh, rad, health))
         + "\n")
 
     # --- ground packets (1 Hz, station.py JSON keys) ---
@@ -72,18 +88,21 @@ def build_synthetic(tmp: Path):
             continue
         pkts.append({
             "n": seq, "t": int(round(t[i] * 1000)),
-            "T": round(float(temp[i]), 2), "P": round(float(press[i]), 2),
-            "A": round(float(alt[i]), 2), "uv": round(float(uvi[i] * 1000), 1),
-            "uvi": round(float(uvi[i]), 2), "ir": round(float(3000 + 9000 * alt[i] / 800), 1),
-            "lux": round(float(300 + 9000 * alt[i] / 800), 1),
+            "T": round(float(temp[i]), 1), "P": round(float(press[i]), 1),
+            "A": round(float(alt[i]), 1), "uv": round(float(uvi[i] * 1000), 0),
             "co2": round(float(co2[i]), 0), "o3": round(float(o3_mv[i]), 1),
-            "la": 50.85, "lo": -0.35, "ga": round(float(alt[i] + 8), 1),
-            "s": int(np.where(gps_fix[i], 7, 0)), "v": round(float(vbat[i]), 2),
-            "h": int(health[i]),
+            "la": 50.85, "lo": -0.35, "ga": round(float(alt[i] + 8), 0),
+            "s": int(np.where(gps_fix[i], 7, 0)),
+            "ax": 0.3, "ay": -0.1, "az": round(float(acc_z[i]), 1),
+            "gx": 0.0, "gy": 0.0, "gz": 0.0,
+            "rh": round(float(rh[i]), 1), "rad": int(rad[i]),
+            "v": round(float(vbat[i]), 2), "h": int(health[i]),
         })
     ground = tmp / "ground.csv"
-    fields = ["rx_time", "n", "t", "T", "P", "A", "uv", "uvi", "ir", "lux",
-              "co2", "o3", "la", "lo", "ga", "s", "v", "h", "rssi", "snr"]
+    fields = ["rx_time", "n", "t", "T", "P", "A", "uv",
+              "co2", "o3", "la", "lo", "ga", "s",
+              "ax", "ay", "az", "gx", "gy", "gz", "rh", "rad",
+              "v", "h", "rssi", "snr"]
     with ground.open("w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(fields)
@@ -103,8 +122,10 @@ def test_load_autodetect(tmp):
     sd, ground, jsonl = build_synthetic(tmp)
     d_sd, d_g, d_j = CanSatData(sd), CanSatData(ground), CanSatData(jsonl)
     assert len(d_sd) == 3001 and len(d_g) == len(d_j) == 296  # 301 sent, 5 lost
-    assert d_sd.df["full_counts"].notna().all()      # SD-only column
-    assert "full_counts" not in d_g.df.columns       # link packets never carry it
+    assert d_sd.df["full_counts"].notna().all()      # SD-only columns
+    assert "full_counts" not in d_g.df.columns       # the link never carries them
+    assert "mag_x" not in d_g.df.columns             # mag stays SD-only too
+    assert d_g.df["acc_x"].notna().all()             # accel is downlinked
     assert d_sd.t[0] == 0.0 and abs(d_sd.t[-1] - 300.0) < 0.01
     assert d_g.df["rssi"].notna().all()              # ground extras preserved
 
@@ -122,6 +143,9 @@ def test_getters(tmp):
     assert abs(d.get_vbat(300.0) - 3.70) < 0.05
     assert np.isnan(d.get_alt(-5.0))                 # outside the log
     assert abs(d.get_o3(100.0) - (O3_ZERO + O3_SENS * (20 + 30 * alt_truth / 800))) < 1.0
+    assert abs(d.get_acc("z", 100.0) - (9.81 - 8.0)) < 0.5
+    assert abs(d.get_rh(100.0) - (60.0 - 30.0 * alt_truth / 800.0)) < 2.0
+    assert abs(d.get_rad(100.0) - (2.0 + 10.0 * alt_truth / 800.0)) < 2.0
 
 
 def test_get_vel(tmp):
@@ -143,7 +167,9 @@ def test_gps_and_health(tmp):
     assert abs(lat - 50.85) < 1e-4 and abs(lon + 0.35) < 1e-4
     assert d.get_health(0.0) == {"bmp": True, "ltr": True, "tsl": True,
                                  "scd": True, "gpsdata": False,
-                                 "gpsfix": False, "sd": True}
+                                 "gpsfix": False, "sd": True,
+                                 "bmi": True, "mlx": True, "sht": True,
+                                 "rad": False}
     assert d.get_health(200.0)["gpsfix"] is True
     g = CanSatData(ground)
     assert g.get_gps(200.0) is not None              # same API on link data

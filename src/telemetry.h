@@ -16,14 +16,14 @@ typedef struct {
     float ir_counts, full_counts, lux;
     float co2_ppm;
     float o3_ppb;
-    /* motion: BMI270 accel + gyro, MLX90395 magnetometer */
+    /* motion: BMI270 + MLX90395 */
     float acc_x, acc_y, acc_z;    /* m/s^2 */
     float gyr_x, gyr_y, gyr_z;    /* deg/s */
     float mag_x, mag_y, mag_z;    /* uT */
     /* humidity: SHT45 */
-    float hum_pct;                /* relative humidity % */
-    float hum_temp_c;             /* SHT45's own temperature */
-    /* radiation: BPW34 S-Z pulse counter */
+    float rh_pct;                 /* relative humidity % */
+    float sht_temp_c;             /* SHT45's own temperature */
+    /* radiation: BPW34 S-Z */
     uint16_t rad_cps;             /* pulses in the last second */
     /* navigation / housekeeping */
     double gps_lat, gps_lon;
@@ -36,8 +36,8 @@ typedef struct {
     uint8_t ok_bmi, ok_mlx, ok_sht, ok_rad;
 } flight_frame_t;
 
-/* health bitmask sent as "h": bit0 BMP, 1 LTR, 2 TSL, 3 SCD, 4 GPS data,
-   5 GPS fix, 6 SD, 7 BMI270, 8 MLX90395, 9 SHT45, 10 RAD counter */
+/* health bitmask "h": bits 0..10 = BMP, LTR, TSL, SCD, GPSdata, GPSfix,
+   SD, BMI, MLX, SHT, RAD */
 uint16_t telemetry_health(const flight_frame_t *f);
 
 /* builds the 1 Hz JSON downlink packet into buf; returns length */

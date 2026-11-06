@@ -8,7 +8,7 @@
 > New drivers: `src/bmi270.c` (+ the 8 KB `bmi270_config_file.c` blob from
 > Bosch's BSD-licensed API), `src/mlx90395.c`, `src/sht45.c`,
 > `src/rad_counter.c` (PB10 EXTI pulse counter). `flight_frame_t` carries
-> acc/gyr/mag/rh/hum_temp/rad_cps; the health bitmask is 11 bits wide
+> acc/gyr/mag/rh_pct/sht_temp_c/rad_cps; the health bitmask is 11 bits wide
 > (`uint16_t`). Build passes (`pio run`, 56.5 KB flash / 2.7 KB RAM).
 > The sections below are the **historical pre-wiring record** — what still
 > stands: **PCB routing + bench bring-up pending** (WIRING.md §2 and the

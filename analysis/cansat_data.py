@@ -12,6 +12,9 @@ PACKET_MAP = {
     "uv": "uv_raw", "uvi": "uv_index", "ir": "ir_counts", "lux": "lux",
     "co2": "co2_ppm", "o3": "o3", "la": "lat", "lo": "lon", "ga": "gps_alt_m",
     "s": "sats", "v": "vbat_v", "h": "health",
+    "ax": "acc_x", "ay": "acc_y", "az": "acc_z",
+    "gx": "gyr_x", "gy": "gyr_y", "gz": "gyr_z",
+    "rh": "rh_pct", "rad": "rad_cps",
 }
 # onboard SD CSV columns -> canonical (same schema at 10 Hz, plus full_counts)
 SD_MAP = {
@@ -21,9 +24,14 @@ SD_MAP = {
     "co2_ppm": "co2_ppm", "o3_ppb": "o3", "lat": "lat", "lon": "lon",
     "gps_alt_m": "gps_alt_m", "sats": "sats", "vbat_v": "vbat_v",
     "health": "health",
+    "acc_x": "acc_x", "acc_y": "acc_y", "acc_z": "acc_z",
+    "gyr_x": "gyr_x", "gyr_y": "gyr_y", "gyr_z": "gyr_z",
+    "mag_x": "mag_x", "mag_y": "mag_y", "mag_z": "mag_z",
+    "rh_pct": "rh_pct", "sht_temp_c": "sht_temp_c", "rad_cps": "rad_cps",
 }
 # health bitmask, bit order from telemetry.h
-HEALTH_BITS = ("BMP", "LTR", "TSL", "SCD", "GPSdata", "GPSfix", "SD")
+HEALTH_BITS = ("BMP", "LTR", "TSL", "SCD", "GPSdata", "GPSfix", "SD",
+               "BMI", "MLX", "SHT", "RAD")
 
 
 class CanSatData:
@@ -127,6 +135,21 @@ class CanSatData:
 
     def get_co2(self, t=None):         # ppm (SCD30, new value every 2 s)
         return self.get("co2_ppm", t)
+
+    def get_acc(self, axis="z", t=None):    # BMI270, m/s^2
+        return self.get(f"acc_{axis}", t)
+
+    def get_gyr(self, axis="z", t=None):    # BMI270, deg/s
+        return self.get(f"gyr_{axis}", t)
+
+    def get_mag(self, axis="z", t=None):    # MLX90395, uT
+        return self.get(f"mag_{axis}", t)
+
+    def get_rh(self, t=None):          # relative humidity % (SHT45)
+        return self.get("rh_pct", t)
+
+    def get_rad(self, t=None):         # BPW34 pulse rate, counts/s
+        return self.get("rad_cps", t)
 
     def get_o3(self, t=None):          # O3-B4; electrode mV until calibrated
         return self.get("o3", t)

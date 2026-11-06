@@ -7,7 +7,7 @@ static volatile uint32_t last_pulse_tick;
 void rad_counter_start(void)
 {
     GPIO_InitTypeDef g = {0};
-    g.Mode  = GPIO_MODE_IT_FALLING;     /* comparator output pulls low per pulse */
+    g.Mode  = GPIO_MODE_IT_FALLING;
     g.Pull  = GPIO_PULLUP;
     g.Speed = GPIO_SPEED_FREQ_LOW;
     g.Pin   = RAD_INPUT_PIN;
