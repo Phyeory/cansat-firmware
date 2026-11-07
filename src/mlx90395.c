@@ -2,17 +2,15 @@
 #include "config.h"
 #include "i2c_dev.h"
 
-/* Command set (as used by Adafruit_MLX90395) */
-#define MLX_CMD_BURST_READ      0x80    /* raw write alone -> 12 data bytes */
-#define MLX_CMD_EXIT_MODE       0x80    /* sent as [0x80, 0x80] */
-#define MLX_CMD_RESET           0xF0    /* [0x80, 0xF0] -> status 0x02 */
-#define MLX_CMD_SINGLE_XYZT     0x3F    /* [0x80, 0x3F] -> status 0x20 */
+#define MLX_CMD_BURST_READ      0x80
+#define MLX_CMD_EXIT_MODE       0x80
+#define MLX_CMD_RESET           0xF0
+#define MLX_CMD_SINGLE_XYZT     0x3F
 
 #define MLX_STATUS_DRDY         0x01
 #define MLX_STATUS_RESET        0x02
 #define MLX_STATUS_SMMODE       0x20
 
-/* uT per LSB at the power-on default gain (8, high field) — verify at bring-up */
 #define MLX90395_UT_PER_LSB     0.714f
 
 static uint8_t mlx_command(I2C_HandleTypeDef *bus, uint8_t cmd)

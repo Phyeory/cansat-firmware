@@ -13,7 +13,6 @@ static uint32_t last_flush = 0;
 
 void sdlog_init(void)
 {
-    /* f_mount was done by MX_FATFS_Init(); just try to open the log file */
     char name[24];
     snprintf(name, sizeof(name), "FL%08lu.csv", (unsigned long)HAL_GetTick());
     if (f_mount(&USERFatFS, "", 1) != FR_OK) return;
@@ -27,7 +26,7 @@ void sdlog_write(const char *row)
     UINT bw;
     f_write(&file, row, strlen(row), &bw);
     f_write(&file, "\r\n", 2, &bw);
-    if (HAL_GetTick() - last_flush >= 1000U) {   /* ~1 Hz flush */
+    if (HAL_GetTick() - last_flush >= 1000U) {
         f_sync(&file);
         last_flush = HAL_GetTick();
     }
@@ -35,7 +34,7 @@ void sdlog_write(const char *row)
 
 uint8_t sdlog_ok(void) { return ok; }
 
-#else  /* !HAS_FATFS: logging disabled, firmware still flies */
+#else
 
 void sdlog_init(void) {}
 void sdlog_write(const char *row) { (void)row; }

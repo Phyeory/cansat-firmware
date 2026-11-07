@@ -1,11 +1,4 @@
-"""Ozone estimator — O3-B4 electrode mV → ppb (DATA-PIPELINE.md §3 ⚠).
-
-The firmware logs the raw differential electrode signal in `o3` (mV)
-until the bench calibration is done.  With a calibration this converts
-to ppb — the doc's C_ppb = (I_work − I_aux)/S, here (mv − zero)/sens —
-and median-despikes it; without one it passes mV through and says so.
-Save the bench numbers once with --save-cal and reuse the JSON forever.
-"""
+"""Convert calibrated O3-B4 readings from mV to ppb."""
 from __future__ import annotations
 
 import argparse
@@ -34,18 +27,12 @@ class O3Cal:
         return cls(**json.loads(Path(path).read_text()))
 
 
-def estimate(d: CanSatData, cal: O3Cal | None = None,
-             despike: int = 11) -> pd.DataFrame:
-    """Frame with t, o3_mv, o3_ppb (NaN without a cal) and, when
-    calibrated, o3_ppb_med — the ~1 s median despiked copy."""
+def estimate(d: CanSatData, cal: O3Cal | None = None) -> pd.DataFrame:
+    """Frame with t, o3_mv and o3_ppb (NaN without a cal)."""
     mv = d.df["o3"].to_numpy(float)
     out = pd.DataFrame({"t": d.t, "o3_mv": mv})
     if cal is not None:
-        ppb = (mv - cal.zero_mv) / cal.sens_mv_per_ppb
-        out["o3_ppb"] = ppb
-        out["o3_ppb_med"] = (pd.Series(ppb)
-                             .rolling(despike, center=True, min_periods=1)
-                             .median().to_numpy())
+        out["o3_ppb"] = (mv - cal.zero_mv) / cal.sens_mv_per_ppb
     else:
         out["o3_ppb"] = np.nan
     return out

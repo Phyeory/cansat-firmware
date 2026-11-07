@@ -1,12 +1,4 @@
-"""Atmosphere estimators — DATA-PIPELINE.md nodes DEN, LAP, HUM.
-
-Pure formula plug-ins on logged fields — no filtering or fusion (that is
-the online/§6 work).  Air density + lapse rate use the BMP280 pair
-(temp_c, pressure_hpa — one sensor, self-consistent); dew point +
-absolute humidity use the SHT45 pair (sht_temp_c, rh_pct, SD-only) and
-fall back to the BMP280 temperature on ground-station logs, where SHT45
-is not downlinked.
-"""
+"""Atmosphere estimators for logged CanSat data."""
 from __future__ import annotations
 
 import argparse
@@ -17,8 +9,8 @@ import pandas as pd
 
 from cansat_data import CanSatData
 
-R_D = 287.05                        # dry air, J/(kg·K) — the doc's Rs
-_MAG_A, _MAG_B = 17.62, 243.12      # Magnus coefficients — the doc's a, b
+R_D = 287.05
+_MAG_A, _MAG_B = 17.62, 243.12
 
 
 def air_density(p_hpa, t_c):
@@ -44,24 +36,40 @@ def abs_humidity(t_c, rh_pct):
     return 216.7 * vapour_pressure(t_c, rh_pct) / (np.asarray(t_c, float) + 273.15)
 
 
-def lapse_rate(d: CanSatData, bin_m: float = 50.0, min_n: int = 8):
-    """Γ = −dT/dz per altitude bin (°C/km) + the whole-profile fit, from
-    BMP280 T vs barometric altitude.  Returns (per-bin DataFrame, Γ_all)."""
+def lapse_rate(d: CanSatData, bin_m: float = 50.0, min_n: int = 3):
+    """Γ = −ΔT/Δz between consecutive 50 m-bin mean temperatures (°C/km).
+
+    Descent-only by default — the samples between the raw altitude peak
+    and the raw minimum.  The pad and ground-rest clusters pile hundreds
+    of samples into the lowest bins and would bias their means.
+    Returns (per-bin DataFrame, Γ from the first to the last bin)."""
     alt = d.df["alt_m"].to_numpy(float)
     t = d.df["temp_c"].to_numpy(float)
     ok = np.isfinite(alt) & np.isfinite(t)
     alt, t = alt[ok], t[ok]
+    i_ap = int(np.argmax(alt))
+    i_min = i_ap + int(np.argmin(alt[i_ap:]))
+    alt, t = alt[i_ap:i_min], t[i_ap:i_min]
     edges = np.arange(np.floor(alt.min() / bin_m) * bin_m, alt.max() + bin_m, bin_m)
     which = np.digitize(alt, edges) - 1
     rows = []
     for k in range(len(edges) - 1):
         m = which == k
         if m.sum() >= min_n:
-            slope = np.polyfit(alt[m], t[m], 1)[0]
             rows.append({"bin_m": 0.5 * (edges[k] + edges[k + 1]),
-                         "n": int(m.sum()), "gamma_c_per_km": -slope * 1000.0})
-    gamma_all = -np.polyfit(alt, t, 1)[0] * 1000.0
-    return pd.DataFrame(rows), gamma_all
+                         "n": int(m.sum()),
+                         "temp_mean_c": float(t[m].mean())})
+    table = pd.DataFrame(rows)
+    gamma = float("nan")
+    if len(table) >= 2:
+        dt = table["temp_mean_c"].diff(-1)
+        dz = table["bin_m"].diff(-1)
+        table["gamma_c_per_km"] = -dt / dz * 1000.0
+        dz_all = table["bin_m"].iloc[-1] - table["bin_m"].iloc[0]
+        if dz_all > 0:
+            gamma = (-(table["temp_mean_c"].iloc[-1]
+                       - table["temp_mean_c"].iloc[0]) / dz_all) * 1000.0
+    return table, gamma
 
 
 def estimate(d: CanSatData) -> pd.DataFrame:
@@ -102,12 +110,12 @@ def main(argv=None) -> int:
 
     d = CanSatData(a.log)
     est = estimate(d)
-    i_ap = int(np.nanargmax(d.df["alt_m"].to_numpy(float)))   # raw apogee
+    i_ap = int(np.nanargmax(d.df["alt_m"].to_numpy(float)))
     print(_line(d, est, "surface", 0))
     print(_line(d, est, "apogee", i_ap))
     print(_line(d, est, "landing", len(d.t) - 1))
-    table, gamma_all = lapse_rate(d, a.bin)
-    print(f"  lapse rate: {gamma_all:.1f} °C/km over the whole profile")
+    table, gamma = lapse_rate(d, a.bin)
+    print(f"  lapse rate (first→last bin): {gamma:.1f} °C/km")
     print(table.round(1).to_string(index=False))
     if a.csv:
         out = Path(a.csv)

@@ -4,7 +4,6 @@
 
 void servos_start(void)
 {
-    /* TIM8 channels were started in board_init(); just park them stowed */
     servos_stow();
 }
 

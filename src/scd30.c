@@ -4,11 +4,11 @@
 #include <string.h>
 
 #define SCD30_ADDR       SCD30_I2C_ADDR
-#define CMD_START_CONT   0x0010   /* start continuous measurement */
+#define CMD_START_CONT   0x0010
 #define CMD_STOP         0x0104
-#define CMD_READ_MEAS    0x0300   /* 18 bytes: 3 floats, each with CRC */
-#define CMD_DATA_READY   0x0202   /* 1 word (3 bytes with CRC) */
-#define CMD_ASC          0x5306   /* automatic self-calibration */
+#define CMD_READ_MEAS    0x0300
+#define CMD_DATA_READY   0x0202
+#define CMD_ASC          0x5306
 
 static HAL_StatusTypeDef cmd16(I2C_HandleTypeDef *bus, uint16_t cmd,
                                const uint16_t *args, int nargs)
@@ -29,15 +29,13 @@ static HAL_StatusTypeDef read_words(I2C_HandleTypeDef *bus, uint16_t cmd,
     uint8_t c[2] = { (uint8_t)(cmd >> 8), (uint8_t)(cmd & 0xFF) };
     if (HAL_I2C_Master_Transmit(bus, SCD30_ADDR, c, 2, 100) != HAL_OK)
         return HAL_ERROR;
-    HAL_Delay(4);   /* SCD30 needs >= 3 ms between command and read */
+    HAL_Delay(4);
     return HAL_I2C_Master_Receive(bus, SCD30_ADDR, out, nwords * 3, 100);
 }
 
 int scd30_init(I2C_HandleTypeDef *bus)
 {
-    /* SCD30 needs up to 2 s after power-up before it answers on I2C.
-       A NACK after that means "sensor absent". */
-    uint16_t asc = 1;   /* enable ASC, good for outdoor flights */
+    uint16_t asc = 1;
     int tries = 0;
     while (cmd16(bus, CMD_ASC, &asc, 1) != HAL_OK) {
         if (++tries > 25) return -1;
@@ -45,7 +43,7 @@ int scd30_init(I2C_HandleTypeDef *bus)
     }
     HAL_Delay(5);
 
-    uint16_t start = 0; /* 0 => default 2 s interval */
+    uint16_t start = 0;
     if (cmd16(bus, CMD_START_CONT, &start, 1) != HAL_OK) return -2;
     return 0;
 }
@@ -54,12 +52,11 @@ int scd30_read(I2C_HandleTypeDef *bus, scd30_data_t *d)
 {
     uint8_t rdy[3] = {0};
     if (read_words(bus, CMD_DATA_READY, rdy, 1) != HAL_OK) return -1;
-    if (!rdy[1]) return 0;                      /* word MSB low => not ready */
+    if (!rdy[1]) return 0;
 
     uint8_t buf[18] = {0};
     if (read_words(bus, CMD_READ_MEAS, buf, 6) != HAL_OK) return -2;
 
-    /* verify CRC of each 3-byte word */
     for (int i = 0; i < 6; i++) {
         if (i2c_crc8(&buf[i * 3], 2) != buf[i * 3 + 2]) return -3;
     }

@@ -6,7 +6,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# telemetry JSON keys (and station.py CSV columns) -> canonical names,
 PACKET_MAP = {
     "n": "seq", "t": "t_ms", "T": "temp_c", "P": "pressure_hpa", "A": "alt_m",
     "uv": "uv_raw", "uvi": "uv_index", "ir": "ir_counts", "lux": "lux",
@@ -16,7 +15,6 @@ PACKET_MAP = {
     "gx": "gyr_x", "gy": "gyr_y", "gz": "gyr_z",
     "rh": "rh_pct", "rad": "rad_cps",
 }
-# onboard SD CSV columns -> canonical (same schema at 10 Hz, plus full_counts)
 SD_MAP = {
     "t_ms": "t_ms", "temp_c": "temp_c", "pressure_hpa": "pressure_hpa",
     "alt_m": "alt_m", "uv_raw": "uv_raw", "uv_index": "uv_index",
@@ -29,7 +27,6 @@ SD_MAP = {
     "mag_x": "mag_x", "mag_y": "mag_y", "mag_z": "mag_z",
     "rh_pct": "rh_pct", "sht_temp_c": "sht_temp_c", "rad_cps": "rad_cps",
 }
-# health bitmask, bit order from telemetry.h
 HEALTH_BITS = ("BMP", "LTR", "TSL", "SCD", "GPSdata", "GPSfix", "SD",
                "BMI", "MLX", "SHT", "RAD")
 
@@ -52,15 +49,13 @@ class CanSatData:
     def __repr__(self):
         return f"CanSatData({len(self)} records, {self.t[-1]:.0f} s)"
 
-    # ---- loading ----------------------------------------------------------
-
     @staticmethod
     def _load(path: Path) -> pd.DataFrame:
         """Read SD CSV / ground CSV / JSON lines into one canonical table."""
         with path.open("r", errors="replace") as fh:
             head = next((ln.strip() for ln in fh
                          if ln.strip() and not ln.strip().startswith("#")), "")
-        if head.startswith("{"):                       # raw JSON packets
+        if head.startswith("{"):
             rows = []
             for ln in path.open("r", errors="replace"):
                 ln = ln.strip()
@@ -71,13 +66,13 @@ class CanSatData:
                 if isinstance(pkt, dict) and "t" in pkt:
                     rows.append(pkt)
             df = pd.DataFrame(rows).rename(columns=PACKET_MAP)
-        elif "t_ms" in head or "rx_time" in head:      # SD log or station.py CSV
+        elif "t_ms" in head or "rx_time" in head:
             raw = pd.read_csv(path, dtype=str, comment="#", skip_blank_lines=True)
             raw.columns = [c.strip() for c in raw.columns]
             m = SD_MAP if "t_ms" in head else PACKET_MAP
             df = pd.DataFrame({canon: pd.to_numeric(raw[src], errors="coerce")
                                for src, canon in m.items() if src in raw.columns})
-            for meta in ("rx_time", "rssi", "snr"):    # ground-station extras
+            for meta in ("rx_time", "rssi", "snr"):
                 if meta in raw.columns:
                     df[meta] = (pd.to_datetime(raw[meta], errors="coerce")
                                 if meta == "rx_time"
@@ -92,8 +87,6 @@ class CanSatData:
             raise ValueError(f"{path.name}: no telemetry rows found")
         return df
 
-    # ---- channel accessors ---------------------------------------------------
-
     def get(self, channel: str, t=None):
         """Any column by canonical name; same t=None / t semantics as below."""
         y = self.df[channel].to_numpy(dtype=float)
@@ -101,16 +94,16 @@ class CanSatData:
             return self.t, y
         return float(np.interp(t, self.t, y, left=np.nan, right=np.nan))
 
-    def get_temp(self, t=None):        # BMP280, °C
+    def get_temp(self, t=None):
         return self.get("temp_c", t)
 
-    def get_pressure(self, t=None):    # BMP280, hPa
+    def get_pressure(self, t=None):
         return self.get("pressure_hpa", t)
 
-    def get_alt(self, t=None):         # barometric altitude, m
+    def get_alt(self, t=None):
         return self.get("alt_m", t)
 
-    def get_vel(self, t=None):         # vertical speed, m/s
+    def get_vel(self, t=None):
         """d(alt)/dt, smoothed over ~1 s — raw single-step gradients of a
         10 Hz barometric series are pure noise."""
         alt = self.df["alt_m"].to_numpy(dtype=float)
@@ -124,37 +117,37 @@ class CanSatData:
             return self.t, v
         return float(np.interp(t, self.t, v, left=np.nan, right=np.nan))
 
-    def get_uv(self, t=None):          # UV index (LTR390)
+    def get_uv(self, t=None):
         return self.get("uv_index", t)
 
-    def get_ir(self, t=None):          # IR counts (TSL2591)
+    def get_ir(self, t=None):
         return self.get("ir_counts", t)
 
-    def get_lux(self, t=None):         # lux (TSL2591)
+    def get_lux(self, t=None):
         return self.get("lux", t)
 
-    def get_co2(self, t=None):         # ppm (SCD30, new value every 2 s)
+    def get_co2(self, t=None):
         return self.get("co2_ppm", t)
 
-    def get_acc(self, axis="z", t=None):    # BMI270, m/s^2
+    def get_acc(self, axis="z", t=None):
         return self.get(f"acc_{axis}", t)
 
-    def get_gyr(self, axis="z", t=None):    # BMI270, deg/s
+    def get_gyr(self, axis="z", t=None):
         return self.get(f"gyr_{axis}", t)
 
-    def get_mag(self, axis="z", t=None):    # MLX90395, uT
+    def get_mag(self, axis="z", t=None):
         return self.get(f"mag_{axis}", t)
 
-    def get_rh(self, t=None):          # relative humidity % (SHT45)
+    def get_rh(self, t=None):
         return self.get("rh_pct", t)
 
-    def get_rad(self, t=None):         # BPW34 pulse rate, counts/s
+    def get_rad(self, t=None):
         return self.get("rad_cps", t)
 
-    def get_o3(self, t=None):          # O3-B4; electrode mV until calibrated
+    def get_o3(self, t=None):
         return self.get("o3", t)
 
-    def get_vbat(self, t=None):        # battery, V
+    def get_vbat(self, t=None):
         return self.get("vbat_v", t)
 
     def get_gps(self, t=None, max_age_s: float = 5.0):

@@ -1,9 +1,3 @@
-/**
- * stm32g4xx_hal_conf.h: HAL module selection for the Celestium CanSat.
- * Only the modules the firmware uses are enabled. DMA, EXTI, FLASH and PWR
- * are required by the other HAL headers even though we don't use them
- * directly (leaving DMA out is what stopped the original from compiling).
- */
 #ifndef STM32G4xx_HAL_CONF_H
 #define STM32G4xx_HAL_CONF_H
 
@@ -11,7 +5,6 @@
 extern "C" {
 #endif
 
-/* ---- modules ---- */
 #define HAL_MODULE_ENABLED
 #define HAL_ADC_MODULE_ENABLED
 #define HAL_CORTEX_MODULE_ENABLED
@@ -26,7 +19,6 @@ extern "C" {
 #define HAL_TIM_MODULE_ENABLED
 #define HAL_UART_MODULE_ENABLED
 
-/* ---- oscillators ---- */
 #if !defined(HSE_VALUE)
 #define HSE_VALUE            (8000000UL)
 #endif
@@ -52,7 +44,6 @@ extern "C" {
 #define EXTERNAL_CLOCK_VALUE (12288000UL)
 #endif
 
-/* ---- system ---- */
 #define VDD_VALUE                 (3300UL)
 #define TICK_INT_PRIORITY         (0x0FUL)
 #define USE_RTOS                  0U
@@ -60,7 +51,6 @@ extern "C" {
 #define INSTRUCTION_CACHE_ENABLE  1U
 #define DATA_CACHE_ENABLE         1U
 
-/* no HAL register-callback mode */
 #define USE_HAL_ADC_REGISTER_CALLBACKS   0U
 #define USE_HAL_I2C_REGISTER_CALLBACKS   0U
 #define USE_HAL_SPI_REGISTER_CALLBACKS   0U
@@ -69,7 +59,6 @@ extern "C" {
 
 #define USE_SPI_CRC  0U
 
-/* ---- includes ---- */
 #include "stm32g4xx_hal_rcc.h"
 #include "stm32g4xx_hal_gpio.h"
 #include "stm32g4xx_hal_dma.h"
@@ -94,4 +83,4 @@ void assert_failed(uint8_t *file, uint32_t line);
 }
 #endif
 
-#endif /* STM32G4xx_HAL_CONF_H */
+#endif

@@ -2,8 +2,6 @@
 #include "board.h"
 #include "config.h"
 
-/* Single-shot polled read on ADC2 (O3 cell + battery). The 247.5-cycle
-   sample time gives the high-impedance potentiostat/divider outputs time to settle. */
 uint16_t adc_read_ch(uint32_t channel)
 {
     ADC_ChannelConfTypeDef cfg = {0};

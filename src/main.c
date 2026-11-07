@@ -1,15 +1,3 @@
-/**
- * main.c: Celestium CanSat flight firmware (STM32G474RE)
- *
- * Primary mission:   BMP280 temperature + pressure -> altitude, JSON
- *                    downlink at 1 Hz over 433 MHz LoRa (Rule 14 compliant).
- * Secondary mission: gas profiling (UV, IR, CO2, O3), motion (BMI270,
- *                    MLX90395), humidity (SHT45) and BPW34 radiation
- *                    counting, all logged to SD at 10 Hz.
- *
- * Data path:  sensors --I2C/UART/ADC--> frame --JSON--> LoRa --> ground
- *                                             \--CSV---> SD card
- */
 #include <stdio.h>
 #include "board.h"
 #include "config.h"
@@ -34,8 +22,6 @@ static uint32_t last_sample, last_telemetry, last_retry;
 
 static void sample_all(void);
 
-/* boot check: lists every device that ACKs on the sensor bus, so a wiring
-   fault shows up on the debug console instead of as silent zeros */
 static void i2c_scan(void)
 {
     printf("[I2C] scan:");
@@ -81,12 +67,10 @@ int main(void)
     if (!lora_ok) printf("[LORA] no reply (RegVersion != 0x12): check SPI1, CS PB0, RST PB1\r\n");
     if (!frame.ok_bmp) printf("[BMP280] missing: primary mission degraded, will keep retrying\r\n");
 
-    /* Never halt in flight: even with a dead sensor, keep sending whatever
-       still works plus GPS so the can can be found. */
     while (1) {
         uint32_t now = HAL_GetTick();
 
-        lora_busy();   /* services TxDone, cheap */
+        lora_busy();
 
         if (now - last_sample >= SAMPLE_PERIOD_MS) {
             last_sample = now;
@@ -97,7 +81,7 @@ int main(void)
             sdlog_write(row);
         }
 
-        if (now - last_telemetry >= TELEMETRY_PERIOD_MS) {   /* 1 Hz downlink */
+        if (now - last_telemetry >= TELEMETRY_PERIOD_MS) {
             last_telemetry = now;
             frame.seq++;
             frame.rad_cps = (uint16_t)rad_counter_latch();
@@ -108,11 +92,10 @@ int main(void)
                 if (lora_ok && lora_send((const uint8_t *)pkt, (uint8_t)n) != 0)
                     printf("[LORA] still busy, packet %lu skipped\r\n",
                            (unsigned long)frame.seq);
-                printf("%s\r\n", pkt);   /* same packet on the bench console */
+                printf("%s\r\n", pkt);
             }
         }
 
-        /* re-init any sensor that dropped off the bus, every 2 s */
         if (now - last_retry >= 2000U) {
             last_retry = now;
             if (!frame.ok_bmp) frame.ok_bmp = (bmp280_init(&hi2c1) == 0);
@@ -149,7 +132,7 @@ static void sample_all(void)
 
     if (frame.ok_scd) {
         scd30_data_t s;
-        if (scd30_read(&hi2c1, &s) > 0) frame.co2_ppm = s.co2_ppm;   /* new every 2 s */
+        if (scd30_read(&hi2c1, &s) > 0) frame.co2_ppm = s.co2_ppm;
     }
 
     if (frame.ok_bmi) {
@@ -176,7 +159,7 @@ static void sample_all(void)
     }
 
     gps_data_t g;  gps_poll(&g);
-    frame.ok_gps    = (g.sentences > 0);   /* bytes arriving = wired right */
+    frame.ok_gps    = (g.sentences > 0);
     frame.gps_fix   = g.fix;
     frame.gps_sats  = g.sats;
     if (g.fix) {
@@ -185,7 +168,6 @@ static void sample_all(void)
         frame.gps_alt_m = g.alt_m;
     }
 
-    /* O3-B4 via potentiostat: working minus auxiliary electrode, mV -> ppb */
     float work_mv = adc_to_v(adc_read_ch(O3_WORK_CHANNEL)) * 1000.0f;
     float aux_mv  = adc_to_v(adc_read_ch(O3_AUX_CHANNEL)) * 1000.0f;
     frame.o3_ppb  = ((work_mv - aux_mv) - O3_ZERO_MV) / O3_MV_PER_PPB;

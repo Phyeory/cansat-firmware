@@ -2,14 +2,14 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define RXBUF_LEN 1024            /* power of two */
+#define RXBUF_LEN 1024
 #define LINE_LEN  100
 #define MAX_FIELDS 20
 
 static UART_HandleTypeDef *u;
 static volatile uint8_t  rxbuf[RXBUF_LEN];
-static volatile uint16_t rx_head = 0;     /* written by ISR */
-static uint16_t rx_tail = 0;              /* read by gps_poll */
+static volatile uint16_t rx_head = 0;
+static uint16_t rx_tail = 0;
 static char     line[LINE_LEN];
 static uint16_t linelen = 0;
 static gps_data_t latest;
@@ -19,7 +19,6 @@ void gps_init(UART_HandleTypeDef *uart)
     u = uart;
     memset(&latest, 0, sizeof(latest));
 
-    /* RX interrupt: one byte -> ring buffer */
     __HAL_UART_CLEAR_FLAG(u, UART_CLEAR_OREF | UART_CLEAR_FEF | UART_CLEAR_NEF);
     HAL_NVIC_SetPriority(USART1_IRQn, 5, 0);
     HAL_NVIC_EnableIRQ(USART1_IRQn);
@@ -34,7 +33,7 @@ void USART1_IRQHandler(void)
     if (isr & USART_ISR_RXNE_RXFNE) {
         uint8_t b = (uint8_t)USART1->RDR;
         uint16_t next = (uint16_t)((rx_head + 1) & (RXBUF_LEN - 1));
-        if (next != rx_tail) {              /* drop byte if buffer full */
+        if (next != rx_tail) {
             rxbuf[rx_head] = b;
             rx_head = next;
         }
@@ -49,7 +48,6 @@ static int hexval(char c)
     return -1;
 }
 
-/* $....*HH  XOR of everything between $ and * */
 static bool checksum_ok(const char *s)
 {
     uint8_t x = 0;
@@ -59,8 +57,6 @@ static bool checksum_ok(const char *s)
     return x == (uint8_t)((hexval(p[1]) << 4) | hexval(p[2]));
 }
 
-/* split on commas but KEEP empty fields (strtok would skip them and shift
-   every index when there's no fix) */
 static int split(char *s, char *f[], int max)
 {
     int n = 0;
@@ -73,7 +69,6 @@ static int split(char *s, char *f[], int max)
     return n;
 }
 
-/* ddmm.mmmm -> decimal degrees */
 static double nmea_deg(const char *v, const char *hemi)
 {
     if (!v[0]) return 0.0;
@@ -90,10 +85,9 @@ static void parse_line(char *s)
     char *f[MAX_FIELDS];
     int n = split(s, f, MAX_FIELDS);
     if (strlen(f[0]) < 6) return;
-    const char *type = f[0] + 3;           /* skip "$GP" / "$GN" / "$GL" */
+    const char *type = f[0] + 3;
 
     if (strcmp(type, "RMC") == 0 && n >= 7) {
-        /* 1 time, 2 status, 3 lat, 4 N/S, 5 lon, 6 E/W */
         latest.fix = (f[2][0] == 'A');
         if (latest.fix) {
             latest.lat_deg = nmea_deg(f[3], f[4]);
@@ -101,7 +95,6 @@ static void parse_line(char *s)
         }
         latest.sentences++;
     } else if (strcmp(type, "GGA") == 0 && n >= 10) {
-        /* 6 quality, 7 sats, 8 hdop, 9 alt */
         latest.sats = (uint8_t)atoi(f[7]);
         if (f[6][0] != '0' && f[9][0]) latest.alt_m = (float)atof(f[9]);
         latest.sentences++;
@@ -114,14 +107,14 @@ void gps_poll(gps_data_t *g)
         char c = (char)rxbuf[rx_tail];
         rx_tail = (uint16_t)((rx_tail + 1) & (RXBUF_LEN - 1));
 
-        if (c == '$') linelen = 0;         /* resync on sentence start */
+        if (c == '$') linelen = 0;
         if (c == '\n') {
             line[linelen] = '\0';
             parse_line(line);
             linelen = 0;
         } else if (c != '\r') {
             if (linelen < LINE_LEN - 1) line[linelen++] = c;
-            else linelen = 0;              /* garbage, drop */
+            else linelen = 0;
         }
     }
     *g = latest;

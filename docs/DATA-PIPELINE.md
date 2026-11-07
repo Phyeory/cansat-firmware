@@ -3,7 +3,7 @@
 > **What this is**: one diagram + three tables showing the full data path — **what we collect RAW** (direct sensor output, exactly what `flight_frame_t` carries), **what is DERIVED** (calculated onboard vs post-flight in Python), and **what we must PLOT** for the PDR / competition rules.
 
 > [!update] Changelog
-> **2026-11-07b** — formula-only estimators implemented in `analysis/` (see the note under §3); the filter/fusion quantities stay with the §6 online/estimation work.
+> **2026-11-07b** — §3 formula plug-ins implemented in `analysis/` (`atmosphere_estimator.py`, `profile_estimator.py`, `ozone_estimator.py`). Means and differences only — no fits, filters or fusion; the filter/fusion rows stay with the §6 online work.
 > **2026-11-07** — cleanup pass: consistent naming (`rh_pct`, `sht_temp_c`), SHT45 polling folded into `sht45_poll()`, §6 KF split added.
 > **2026-11-06** — the four PDR gaps wired in: `src/bmi270.c` (+ the 8 KB `bmi270_config_file.c` blob from Bosch's BSD-licensed API), `src/mlx90395.c`, `src/sht45.c`, `src/rad_counter.c` (PB10 EXTI pulse counter). Health bitmask is 11 bits (`uint16_t`). Build passes (`pio run`, 56.5 KB flash / 2.7 KB RAM). Downlink JSON carries accel/gyro/RH/pulses-per-second; SD keeps everything at 10 Hz. LoRa at **250 kHz** so the ~247 B packet fits the 253 B SF7 payload cap.
 
@@ -157,22 +157,22 @@ Rates come from [`src/config.h`](../src/config.h): `SAMPLE_PERIOD_MS = 100` (onb
 | Quantity | Formula | Inputs | Computed where | Status |
 |---|---|---|---|---|
 | Altitude | $h=\tfrac{T_0}{L}\left(1-\left(\tfrac{P}{P_0}\right)^{RL/(gM)}\right)$ | P, T | onboard (already in frame) | ✅ done |
-| Vertical velocity (descent rate) | $v=\Delta h/\Delta t$ — central difference + median filter | h, t | post-flight (★ online KF planned, §6) | ✅ easy |
-| Air density | $\rho=\tfrac{P}{R_s T}$, $R_s=287.05$ J/kg·K | P, T | post-flight | ✅ easy |
-| Temperature lapse rate | $\Gamma=-\,\mathrm{d}T/\mathrm{d}z$ | T, h | post-flight | ✅ easy |
-| Dew point | $\gamma=\ln\tfrac{RH}{100}+\tfrac{aT}{b+T},\;T_d=\tfrac{b\gamma}{a-\gamma}$ | `sht_temp_c`, `rh_pct` | post-flight | ✅ SHT45 in frame |
-| Absolute humidity | $AH=216.7\,\tfrac{e_s}{T+273.15}$ g/m³, $e_s=\tfrac{RH}{100}\cdot 6.112\,e^{17.62T/(243.12+T)}$ | `sht_temp_c`, `rh_pct` | post-flight | ✅ SHT45 in frame |
+| Vertical velocity (descent rate) | $v=\Delta h/\Delta t$ — central difference + median filter | h, t | post-flight (★ online KF planned, §6) | ✅ `cansat_data.get_vel` |
+| Air density | $\rho=\tfrac{P}{R_s T}$, $R_s=287.05$ J/kg·K | P, T | post-flight | ✅ `atmosphere_estimator.py` |
+| Temperature lapse rate | $\Gamma=-\,\mathrm{d}T/\mathrm{d}z$ | T, h | post-flight | ✅ `atmosphere_estimator.py` |
+| Dew point | $\gamma=\ln\tfrac{RH}{100}+\tfrac{aT}{b+T},\;T_d=\tfrac{b\gamma}{a-\gamma}$ | `sht_temp_c`, `rh_pct` | post-flight | ✅ `atmosphere_estimator.py` |
+| Absolute humidity | $AH=216.7\,\tfrac{e_s}{T+273.15}$ g/m³, $e_s=\tfrac{RH}{100}\cdot 6.112\,e^{17.62T/(243.12+T)}$ | `sht_temp_c`, `rh_pct` | post-flight | ✅ `atmosphere_estimator.py` |
 | Orientation roll/pitch/yaw | sensor fusion (Mahony/Madgwick / EKF) | accel, gyro, mag | post-flight ☆ | ✅ data in frame |
 | Descent oscillation frequency | FFT of angular rate | `gyr_*` | post-flight | ✅ data in frame |
 | 3D trajectory | fuse GNSS + inertial + baro (EKF + RTS smoother) | IMU, GPS, P | post-flight ☆ | ✅ data in frame |
 | Horizontal drift / wind proxy | Δlat/Δlon per altitude bin vs expected descent | GPS | post-flight | ✅ possible now |
-| GNSS vs baro altitude error | $\Delta h=h_{GNSS}-h_{baro}$ | `ga`, `A` | post-flight | ✅ easy |
-| Altitude-binned profiles | mean of each sensor per 50 m altitude bin | all | post-flight | ✅ core science step |
-| Radiation count rate | counts/s vs altitude | `rad_cps` | post-flight | ✅ counter in frame |
-| Ozone from mV | $C_{ppb}=(I_{work}-I_{aux})/S$ | ADC counts | post-flight (needs cal curve) | ⚠ needs O3-B4 calibration |
+| GNSS vs baro altitude error | $\Delta h=h_{GNSS}-h_{baro}$ | `ga`, `A` | post-flight | ✅ `profile_estimator.py` |
+| Altitude-binned profiles | mean of each sensor per 50 m altitude bin | all | post-flight | ✅ `profile_estimator.py` |
+| Radiation count rate | counts/s vs altitude | `rad_cps` | post-flight | ✅ `profile_estimator.py` |
+| Ozone from mV | $C_{ppb}=(I_{work}-I_{aux})/S$ | ADC counts | post-flight (needs cal curve) | ⚠ `ozone_estimator.py` — needs O3-B4 calibration |
 | Parachute deployment time | detect Δv discontinuity | accel + v | post-flight | ✅ accel now available |
 
-**Formula plug-ins (2026-11-07)** — the pure-formula rows are scripts in [`../analysis/`](../analysis/README.md): `atmosphere_estimator.py` (ρ, Γ, dew point, AH), `profile_estimator.py` (50 m bins, radiation rate ± sem, GNSS−baro Δh), `ozone_estimator.py` (mV→ppb with the cal JSON); each is importable *and* a CLI, tested in `test_estimators.py`. The rows that need a filter or fusion (velocity re-filter, orientation, 3D trajectory, wind proxy, deploy detection) are part of the online/estimation work (§6) and deliberately not scripted here.
+**Formula plug-ins (2026-11-07)** — the rows tagged with a script name above are implemented in [`../analysis/`](../analysis/README.md); each is importable *and* a CLI, numpy/pandas only, no scipy. Deliberately **formula-only — nothing in `analysis/` filters, fits, or holds state**: bins hold plain means, Γ = −ΔT/Δz between consecutive 50 m-bin mean temperatures (descent-only by default, so the pad and ground-rest clusters can't dominate the lowest bins), Δh is one subtraction, ozone is (mV − zero)/sens. The rows needing filtering or fusion (velocity re-filter, orientation, oscillation, 3D trajectory, wind proxy, deploy detection) are the §6 online/estimation work; the simple $v=\Delta h/\Delta t$ recipe lives in `cansat_data.get_vel`.
 
 ## 4. PLOTS — what the PDR + rules expect
 
@@ -186,6 +186,8 @@ Rates come from [`src/config.h`](../src/config.h): `SAMPLE_PERIOD_MS = 100` (onb
 | Oscillation vs time | ω vs t | `gyr_*` | PDR secondary list |
 | Radiation count rate vs altitude | counts/s vs h | `rad_cps` | PDR secondary list |
 | Battery + health timeline | V, bitmask vs t | `v`, `h` | power budget evidence |
+
+Each `analysis/` estimator writes plot-ready CSVs via `--csv DIR`: the binned profile feeds the science heatmap, `radiation_profile` the radiation plot, `gnss_baro_dh` the GNSS-vs-baro Δh plot.
 
 > **Rule reminder** (verified 2026-10-09): telemetry **once per second** (done — `TELEMETRY_PERIOD_MS = 1000`), frequency must be **alterable** and UK-legal (done — LoRa 433 MHz @ 10 dBm). GPS is **not** part of the compulsory mission.
 

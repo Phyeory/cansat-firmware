@@ -22,7 +22,7 @@ import time
 from datetime import datetime
 
 try:
-    import serial  # pyserial
+    import serial
     import serial.tools.list_ports
 except ImportError:
     sys.exit("pyserial missing: python3 -m pip install pyserial")
@@ -31,7 +31,7 @@ try:
     import matplotlib.pyplot as plt
     PLOT = True
 except ImportError:
-    PLOT = False  # still log to CSV without plotting
+    PLOT = False
 
 FIELDS = ["rx_time", "n", "t", "T", "P", "A", "uv",
           "co2", "o3", "la", "lo", "ga", "s",

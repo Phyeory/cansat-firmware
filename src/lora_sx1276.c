@@ -1,7 +1,6 @@
 #include "lora_sx1276.h"
 #include "config.h"
 
-/* SX1276 register set (LoRa mode), subset needed for packet TX */
 #define REG_FIFO            0x00
 #define REG_OP_MODE         0x01
 #define REG_FRF_MSB         0x06
@@ -30,7 +29,7 @@
 #define MODE_LORA_TX        0x83
 
 #define IRQ_TX_DONE_MASK    0x08
-#define PA_BOOST            0x80   /* RFM96W only has the PA_BOOST pin wired */
+#define PA_BOOST            0x80
 #define TX_TIMEOUT_MS       1500U
 
 static SPI_HandleTypeDef *s;
@@ -62,7 +61,7 @@ static void fifo_write(const uint8_t *data, uint8_t len)
     uint8_t addr = REG_FIFO | 0x80;
     cs_low();
     HAL_SPI_Transmit(s, &addr, 1, 10);
-    HAL_SPI_Transmit(s, (uint8_t *)data, len, 50);   /* burst write */
+    HAL_SPI_Transmit(s, (uint8_t *)data, len, 50);
     cs_high();
 }
 
@@ -79,37 +78,35 @@ int lora_init(SPI_HandleTypeDef *spi)
     s = spi;
     ready = 0;
     reset();
-    if (reg_read(REG_VERSION) != 0x12) return -1;   /* wiring/SPI fault */
+    if (reg_read(REG_VERSION) != 0x12) return -1;
 
-    reg_write(REG_OP_MODE, 0x00);                   /* FSK sleep */
-    reg_write(REG_OP_MODE, MODE_LORA_SLEEP);        /* switch to LoRa while asleep */
+    reg_write(REG_OP_MODE, 0x00);
+    reg_write(REG_OP_MODE, MODE_LORA_SLEEP);
     HAL_Delay(10);
 
-    /* frequency: FRF = F * 2^19 / 32 MHz */
     uint64_t frf = ((uint64_t)LORA_FREQ_HZ << 19) / 32000000U;
     reg_write(REG_FRF_MSB, (uint8_t)(frf >> 16));
     reg_write(REG_FRF_MID, (uint8_t)(frf >> 8));
     reg_write(REG_FRF_LSB, (uint8_t)frf);
 
-    /* PA_BOOST: Pout = 17 - (15 - OutputPower) = 2 + OutputPower dBm */
     int p = LORA_TX_POWER_DB;
     if (p < 2) p = 2;
     if (p > 17) p = 17;
     reg_write(REG_PA_CONFIG, (uint8_t)(PA_BOOST | 0x70 | (p - 2)));
-    reg_write(REG_PA_DAC, 0x84);                    /* normal (non +20 dBm) mode */
-    reg_write(REG_OCP, 0x2B);                       /* OCP on, 100 mA */
+    reg_write(REG_PA_DAC, 0x84);
+    reg_write(REG_OCP, 0x2B);
     reg_write(REG_LNA, 0x23);
 
-    reg_write(REG_MODEM_CONFIG1, (uint8_t)((LORA_BW_CODE << 4) | (LORA_CR_CODE << 1))); /* explicit header */
-    reg_write(REG_MODEM_CONFIG2, (uint8_t)((LORA_SF << 4) | 0x04));                    /* CRC on */
-    reg_write(REG_MODEM_CONFIG3, (LORA_SF >= 11) ? 0x0C : 0x04);   /* AGC on, LDRO for SF11+ */
+    reg_write(REG_MODEM_CONFIG1, (uint8_t)((LORA_BW_CODE << 4) | (LORA_CR_CODE << 1)));
+    reg_write(REG_MODEM_CONFIG2, (uint8_t)((LORA_SF << 4) | 0x04));
+    reg_write(REG_MODEM_CONFIG3, (LORA_SF >= 11) ? 0x0C : 0x04);
     reg_write(REG_PREAMBLE_MSB, (uint8_t)(LORA_PREAMBLE >> 8));
     reg_write(REG_PREAMBLE_LSB, (uint8_t)(LORA_PREAMBLE & 0xFF));
     reg_write(REG_SYNC_WORD, LORA_SYNC_WORD);
 
-    reg_write(REG_FIFO_TX_BASE, 0x00);              /* TX only: use all 256 bytes */
+    reg_write(REG_FIFO_TX_BASE, 0x00);
     reg_write(REG_FIFO_RX_BASE, 0x00);
-    reg_write(REG_DIO_MAPPING1, 0x40);              /* DIO0 = TxDone */
+    reg_write(REG_DIO_MAPPING1, 0x40);
     reg_write(REG_OP_MODE, MODE_LORA_STDBY);
 
     ready = 1;
@@ -123,11 +120,11 @@ uint8_t lora_busy(void)
 
     if (HAL_GPIO_ReadPin(LORA_DIO0_GPIO, LORA_DIO0_PIN) == GPIO_PIN_SET ||
         (reg_read(REG_IRQ_FLAGS) & IRQ_TX_DONE_MASK)) {
-        reg_write(REG_IRQ_FLAGS, 0xFF);             /* clear, DIO0 drops */
+        reg_write(REG_IRQ_FLAGS, 0xFF);
         busy = 0;
         n_tx++;
     } else if (HAL_GetTick() - tx_started > TX_TIMEOUT_MS) {
-        reg_write(REG_OP_MODE, MODE_LORA_STDBY);    /* abort stuck TX */
+        reg_write(REG_OP_MODE, MODE_LORA_STDBY);
         reg_write(REG_IRQ_FLAGS, 0xFF);
         busy = 0;
         n_fail++;
@@ -144,7 +141,7 @@ int lora_send(const uint8_t *data, uint8_t len)
     fifo_write(data, len);
     reg_write(REG_PAYLOAD_LEN, len);
     reg_write(REG_IRQ_FLAGS, 0xFF);
-    reg_write(REG_OP_MODE, MODE_LORA_TX);           /* chip returns to standby when done */
+    reg_write(REG_OP_MODE, MODE_LORA_TX);
 
     tx_started = HAL_GetTick();
     busy = 1;

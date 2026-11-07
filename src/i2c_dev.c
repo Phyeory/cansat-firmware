@@ -19,7 +19,6 @@ HAL_StatusTypeDef i2c_read_regs(I2C_HandleTypeDef *bus, uint16_t addr,
     return HAL_I2C_Mem_Read(bus, addr, reg, I2C_MEMADD_SIZE_8BIT, buf, len, 100);
 }
 
-/* CRC-8, polynomial 0x31, init 0xFF — used by SCD30 and other Sensirion parts */
 uint8_t i2c_crc8(const uint8_t *data, int len)
 {
     uint8_t crc = 0xFF;

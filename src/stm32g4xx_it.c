@@ -1,6 +1,3 @@
-/* Interrupt handlers. SysTick drives the HAL tick; USART1 (GPS RX) lives in
-   gps_sam_m8q.c; EXTI15_10 (PB10 radiation pulses) lives in rad_counter.c;
-   everything else polls. */
 #include "stm32g4xx_hal.h"
 
 void SysTick_Handler(void)
@@ -10,7 +7,7 @@ void SysTick_Handler(void)
 
 void EXTI15_10_IRQHandler(void)
 {
-    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_10);   /* -> HAL_GPIO_EXTI_Callback */
+    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_10);
 }
 
 void HardFault_Handler(void)  { while (1) { } }

@@ -3,13 +3,12 @@
 #include "config.h"
 
 #define LTR390_ADDR       LTR390_I2C_ADDR
-#define LTR390_MAIN_CTRL  0x00   /* bit0 enable, bit1 mode (1 = UVS) */
-#define LTR390_MEAS_RATE  0x04   /* resolution (bits 4..6) | rate (bits 0..2) */
+#define LTR390_MAIN_CTRL  0x00
+#define LTR390_MEAS_RATE  0x04
 #define LTR390_GAIN       0x05
 #define LTR390_PART_ID    0x06
-#define LTR390_UVS_DATA   0x10   /* 3 bytes LSB first */
+#define LTR390_UVS_DATA   0x10
 
-/* 18-bit resolution, rate 100 ms */
 #define LTR390_RES_18BIT_RATE_100MS 0x22
 #define LTR390_GAIN_3               0x01
 
@@ -18,13 +17,13 @@ int ltr390_init(I2C_HandleTypeDef *bus)
     uint8_t id = 0;
     if (i2c_read_reg(bus, LTR390_ADDR, LTR390_PART_ID, &id) != HAL_OK)
         return -1;
-    if ((id >> 4) != 0xB)          /* part number B = LTR390 */
+    if ((id >> 4) != 0xB)
         return -2;
 
     i2c_write_reg(bus, LTR390_ADDR, LTR390_GAIN, LTR390_GAIN_3);
     i2c_write_reg(bus, LTR390_ADDR, LTR390_MEAS_RATE, LTR390_RES_18BIT_RATE_100MS);
-    i2c_write_reg(bus, LTR390_ADDR, LTR390_MAIN_CTRL, 0x02);  /* UVS mode, disabled */
-    i2c_write_reg(bus, LTR390_ADDR, LTR390_MAIN_CTRL, 0x03);  /* UVS mode, enable */
+    i2c_write_reg(bus, LTR390_ADDR, LTR390_MAIN_CTRL, 0x02);
+    i2c_write_reg(bus, LTR390_ADDR, LTR390_MAIN_CTRL, 0x03);
     return 0;
 }
 
@@ -37,7 +36,5 @@ void ltr390_read(I2C_HandleTypeDef *bus, ltr390_data_t *d)
     }
     d->uv_raw = (float)((uint32_t)buf[0] | (uint32_t)buf[1] << 8 |
                         (uint32_t)buf[2] << 16);
-    /* datasheet: 2300 counts/UVI at gain 18, 20-bit. Scale to gain 3,
-       18-bit: 2300 * (3/18) * (2^18/2^20) = ~95.8 counts per UVI */
     d->uv_index = d->uv_raw / (2300.0f * (3.0f / 18.0f) * 0.25f);
 }

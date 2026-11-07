@@ -1,12 +1,4 @@
-"""Altitude-binned science profiles + GNSS−baro altitude error —
-DATA-PIPELINE.md nodes BIN, RADC, ERR.
-
-Pure formula plug-ins: per-bin statistics of every logged science channel
-against barometric altitude (50 m default, per the doc), the radiation
-count rate with a standard-error bar (node RADC), and the one-subtraction
-GNSS−baro Δh (node ERR).  No filters — slow science channels get bins,
-not KFs (§6.1).
-"""
+"""Altitude-binned science profiles and GNSS/barometric altitude error."""
 from __future__ import annotations
 
 import argparse
@@ -34,7 +26,7 @@ def gnss_baro_dh(d: CanSatData) -> pd.DataFrame:
 def binned_profile(d: CanSatData, bin_m: float = 50.0, channels=None,
                    min_n: int = 3, phase: str = "all") -> pd.DataFrame:
     """DataFrame with one row per altitude bin: bin_m (centre), n, and
-    <channel>_mean / _std for every requested channel present in the log.
+    <channel>_mean for every requested channel present in the log.
     phase: 'all' | 'ascent' | 'descent' (split at the raw altitude peak —
     science profiles usually want 'descent')."""
     alt = d.df["alt_m"].to_numpy(float)
@@ -57,21 +49,18 @@ def binned_profile(d: CanSatData, bin_m: float = 50.0, channels=None,
                 v = v[np.isfinite(v)]
                 if v.size:
                     row[f"{c}_mean"] = float(v.mean())
-                    row[f"{c}_std"] = float(v.std()) if v.size > 1 else 0.0
             rows.append(row)
     return pd.DataFrame(rows)
 
 
 def radiation_profile(d: CanSatData, bin_m: float = 50.0,
                       min_n: int = 3) -> pd.DataFrame:
-    """Node RADC: rad_cps per bin with the standard error of the mean.
-    The per-sample Poisson sigma of a 1 s latch is √cps, so std/√n is the
-    honest uncertainty for the count-rate-vs-altitude plot (P7)."""
+    """Node RADC: rad_cps mean per altitude bin for the
+    count-rate-vs-altitude plot (P7)."""
     prof = binned_profile(d, bin_m, ["rad_cps"], min_n)
     if prof.empty:
         return prof
-    prof["rad_cps_sem"] = prof["rad_cps_std"] / np.sqrt(prof["n"])
-    return prof[["bin_m", "n", "rad_cps_mean", "rad_cps_sem"]]
+    return prof[["bin_m", "n", "rad_cps_mean"]]
 
 
 def main(argv=None) -> int:
@@ -99,8 +88,7 @@ def main(argv=None) -> int:
         dh = dh[np.isfinite(dh)]
         if len(dh):
             print(f"  GNSS − baro Δh: mean {dh.mean():+.1f} m, "
-                  f"std {dh.std():.1f} m, max |Δh| {np.abs(dh).max():.1f} m "
-                  f"({len(dh)} fixes)")
+                  f"max |Δh| {np.abs(dh).max():.1f} m ({len(dh)} fixes)")
     if a.csv:
         out = Path(a.csv)
         out.mkdir(parents=True, exist_ok=True)

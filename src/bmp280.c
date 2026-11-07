@@ -3,7 +3,6 @@
 #include "config.h"
 #include <math.h>
 
-/* BMP280 registers & datasheet compensation */
 #define BMP280_REG_ID      0xD0
 #define BMP280_REG_RESET   0xE0
 #define BMP280_REG_STATUS  0xF3
@@ -11,10 +10,8 @@
 #define BMP280_REG_CONFIG  0xF5
 #define BMP280_REG_DATA    0xF7
 
-/* ctrl_meas: temperature oversampling x2 (010), pressure x16 (101),
-   normal mode (11) -> 0b010_101_11 = 0x57 */
 #define BMP280_CTRL_NORMAL 0x57
-#define BMP280_CONFIG_F16  0x10        /* filter coefficient 16 */
+#define BMP280_CONFIG_F16  0x10
 
 static struct {
     uint16_t T1; int16_t T2, T3;
@@ -26,7 +23,7 @@ int bmp280_init(I2C_HandleTypeDef *bus)
     uint8_t id = 0;
     if (i2c_read_reg(bus, BMP280_I2C_ADDR, BMP280_REG_ID, &id) != HAL_OK)
         return -1;
-    if (id != 0x58 && id != 0x60)   /* 0x58 = BMP280, 0x60 = BME280 (also works) */
+    if (id != 0x58 && id != 0x60)
         return -2;
 
     uint8_t buf[24];
@@ -69,13 +66,13 @@ static float compensate_P(int32_t adc, int32_t t_fine)
     v2 = v2 + (((int64_t)cal.P4) << 35);
     v1 = ((v1 * v1 * (int64_t)cal.P3) >> 8) + ((v1 * (int64_t)cal.P2) << 12);
     v1 = (((((int64_t)1) << 47) + v1) * (int64_t)cal.P1) >> 33;
-    if (v1 == 0) return 0.0f;                     /* avoid div by zero */
+    if (v1 == 0) return 0.0f;
     int64_t p = 1048576 - adc;
     p = (((p << 31) - v2) * 3125) / v1;
     v1 = (((int64_t)cal.P9) * (p >> 13) * (p >> 13)) >> 25;
     v2 = (((int64_t)cal.P8) * p) >> 19;
     p = ((p + v1 + v2) >> 8) + (((int64_t)cal.P7) << 4);
-    return (float)p / 25600.0f;                   /* Pa -> hPa */
+    return (float)p / 25600.0f;
 }
 
 void bmp280_read(I2C_HandleTypeDef *bus, bmp280_data_t *d)

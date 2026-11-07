@@ -2,11 +2,9 @@
 #include "config.h"
 #include "i2c_dev.h"
 
-/* SHT4x commands are single raw bytes written to the bus (no register) */
-#define SHT_CMD_SOFT_RESET      0x94    /* then 1 ms */
-#define SHT_CMD_TRIG_HIGH       0xFD    /* high-repeatability, max 8.3 ms */
+#define SHT_CMD_SOFT_RESET      0x94
+#define SHT_CMD_TRIG_HIGH       0xFD
 
-/* raw = -45 + 175 * raw/65535 for T, -6 + 125 * raw/65535 for RH */
 #define SHT_T_SCALE   (175.0f / 65535.0f)
 #define SHT_T_OFFSET  (-45.0f)
 #define SHT_RH_SCALE  (125.0f / 65535.0f)
@@ -45,7 +43,7 @@ int sht45_poll(I2C_HandleTypeDef *bus, sht45_data_t *d)
     if (HAL_I2C_Master_Receive(bus, SHT45_I2C_ADDR, b, 6, 100) != HAL_OK)
         return -1;
     if (i2c_crc8(b, 2) != b[2] || i2c_crc8(b + 3, 2) != b[5])
-        return 0;                       /* CRC bad: keep last value */
+        return 0;
 
     d->temp_c = SHT_T_OFFSET + SHT_T_SCALE * (uint16_t)((b[0] << 8) | b[1]);
     float rh  = SHT_RH_OFFSET + SHT_RH_SCALE * (uint16_t)((b[3] << 8) | b[4]);

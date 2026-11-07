@@ -11,8 +11,6 @@ uint16_t telemetry_health(const flight_frame_t *f)
                       (f->ok_rad ? 1024 : 0));
 }
 
-/* "uvi", "lux", "ir", mag and sht_temp stay SD-only to keep the worst-case
-   in-flight packet (~247 B) under the 253 B LoRa cap at SF7 / 250 kHz. */
 int telemetry_json(const flight_frame_t *f, char *buf, int n)
 {
     return snprintf(buf, n,

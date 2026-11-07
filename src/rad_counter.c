@@ -1,7 +1,7 @@
 #include "rad_counter.h"
 #include "config.h"
 
-static volatile uint32_t pulses;        /* written in ISR, latched in main */
+static volatile uint32_t pulses;
 static volatile uint32_t last_pulse_tick;
 
 void rad_counter_start(void)
@@ -13,7 +13,7 @@ void rad_counter_start(void)
     g.Pin   = RAD_INPUT_PIN;
     HAL_GPIO_Init(RAD_INPUT_GPIO, &g);
 
-    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);   /* same level as the GPS IRQ */
+    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
     HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
 
@@ -28,11 +28,10 @@ uint32_t rad_counter_latch(void)
 
 uint8_t rad_counter_active(void)
 {
-    uint32_t t = last_pulse_tick;       /* single 32-bit read: atomic */
+    uint32_t t = last_pulse_tick;
     return (t != 0 && HAL_GetTick() - t < 60000U) ? 1U : 0U;
 }
 
-/* overrides the HAL weak symbol used by EXTI15_10_IRQHandler */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == RAD_INPUT_PIN) {
