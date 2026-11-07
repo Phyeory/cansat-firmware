@@ -56,7 +56,7 @@ The pin map lives in [`src/config.h`](src/config.h) and is mirrored in
 2. **Build & flash from here**:
 
 ```bash
-pip install -U platformio          # one-time
+python3 -m pip install -r requirements.txt  # one-time
 pio run                            # compiles everything
 pio run -t upload                  # flash via ST-Link
 pio device monitor                 # live debug output (115200, USART2)
@@ -102,10 +102,13 @@ vs time and temperature vs altitude), plus a CSV for post-processing. It
 also counts lost packets and shows which sensors are healthy.
 
 ```bash
-python3 -m pip install pyserial matplotlib
+python3 -m pip install -r requirements.txt  # one-time
 python3 ground-station/station.py --list          # find the port
 python3 ground-station/station.py /dev/tty.usbmodem*
 ```
+
+VS Code will recommend the embedded C/C++ and Python extensions from
+`.vscode/extensions.json` when the repository is opened.
 
 ## Rules notes (2026-27)
 
@@ -124,6 +127,10 @@ python3 ground-station/station.py /dev/tty.usbmodem*
 - [ ] Enable + test FatFS/SD logging (`-DHAS_FATFS`).
 - [ ] Descent state machine + spoiler-deploy trigger logic (servos are
       ready; the trigger decision is the remaining flight-code task).
+      *(2026-11-07: the fin/petal brake system is archived — the competition
+      descent is chute-only at ~10 m/s, statically stable with no descent-control
+      hardware. Servo trigger logic on hold unless the v2 petal brake is revived;
+      the chute-only state machine reduces to apogee → landing → power-down.)*
 
 ## Licence
 
