@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Celestium CanSat ground station.
 
-Receives the JSON telemetry packets sent by the CanSat over LoRa via the
-receiver bridge (ground-station/lora_receiver) on USB serial, and provides
-the two rule-required deliverables in real time:
+Receives the JSON telemetry packets sent by the CanSat over the E22 radio
+via the E22-900T22U USB module (a virtual serial port), and provides the two
+rule-required deliverables in real time:
   - altitude vs time
   - temperature vs altitude
 Everything is also appended to a timestamped CSV for post-processing.
@@ -34,12 +34,11 @@ except ImportError:
     PLOT = False
 
 FIELDS = ["rx_time", "n", "t", "T", "P", "A", "uv",
-          "co2", "o3", "la", "lo", "ga", "s",
-          "ax", "ay", "az", "gx", "gy", "gz", "rh", "rad",
+          "co2", "o3", "la", "lo", "ga", "s", "rh", "rad",
           "v", "h", "rssi", "snr"]
 
-HEALTH_BITS = ["BMP", "LTR", "TSL", "SCD", "GPSdata", "GPSfix", "SD",
-               "BMI", "MLX", "SHT", "RAD"]
+HEALTH_BITS = ["BARO", "LTR", "TSL", "SCD", "GPSdata", "GPSfix", "SD",
+               "MLX90395", "SHT45", "RAD"]
 
 
 def health_str(h):
@@ -72,7 +71,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("port", nargs="?")
     ap.add_argument("--csv", default=f"flight_{datetime.now():%Y%m%d_%H%M%S}.csv")
-    ap.add_argument("--baud", type=int, default=115200)
+    ap.add_argument("--baud", type=int, default=9600)
     ap.add_argument("--list", action="store_true", help="list serial ports")
     args = ap.parse_args()
 
@@ -154,7 +153,7 @@ def main():
                 rows["T"].append(pkt.get("T", float("nan")))
 
                 print(f"[{now:%H:%M:%S}] #{n} alt={pkt.get('A')}m T={pkt.get('T')}C "
-                      f"P={pkt.get('P')}hPa co2={pkt.get('co2')} az={pkt.get('az')} "
+                      f"P={pkt.get('P')}hPa co2={pkt.get('co2')} "
                       f"rh={pkt.get('rh')} rad={pkt.get('rad')} "
                       f"sats={pkt.get('s')} V={pkt.get('v')} rssi={pkt.get('rssi')} "
                       f"snr={pkt.get('snr')} loss={loss:.0f}%  [{health_str(pkt.get('h'))}]")

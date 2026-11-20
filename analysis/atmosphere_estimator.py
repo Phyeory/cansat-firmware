@@ -74,7 +74,7 @@ def lapse_rate(d: CanSatData, bin_m: float = 50.0, min_n: int = 3):
 
 def estimate(d: CanSatData) -> pd.DataFrame:
     """Per-sample derived columns: rho_kgm3, and (if RH is logged)
-    t_dew_c + abs_hum_gm3 on the SHT45 pair (BMP280 T as fallback)."""
+    t_dew_c + abs_hum_gm3 on the SHT45 pair (BMP581 T as fallback)."""
     use_sht = ("sht_temp_c" in d.df.columns
                and d.df["sht_temp_c"].notna().mean() > 0.5)
     t_hum = d.df["sht_temp_c" if use_sht else "temp_c"].to_numpy(float)

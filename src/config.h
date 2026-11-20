@@ -4,29 +4,26 @@
 #define HCLK_HZ 170000000U
 
 #define I2C_TIMING_100K     0x00303D5BU
-#define BMP280_I2C_ADDR     (0x76U << 1)
 #define LTR390_I2C_ADDR     (0x53U << 1)
 #define TSL2591_I2C_ADDR    (0x29U << 1)
 #define SCD30_I2C_ADDR      (0x61U << 1)
-#define BMI270_I2C_ADDR     (0x68U << 1)   // SDO -> GND (0x69 if -> 3V3)
-#define MLX90395_I2C_ADDR   (0x0CU << 1)   // A1 -> GND, A0 -> GND
 #define SHT45_I2C_ADDR      (0x44U << 1)
 
-#define LORA_SPI            hspi1
-#define LORA_CS_GPIO        GPIOB
-#define LORA_CS_PIN         GPIO_PIN_0     // PB0  (NSS, active low)
-#define LORA_RST_GPIO       GPIOB
-#define LORA_RST_PIN        GPIO_PIN_1     // PB1
-#define LORA_DIO0_GPIO      GPIOA
-#define LORA_DIO0_PIN       GPIO_PIN_8     // PA8  (goes high on TxDone)
+/* Shared sensor SPI bus.  MLX90395 and BMP581 each have their own chip
+   select and both use SPI mode 3 (see board.c). */
+#define SENSOR_SPI          hspi1
+#define MLX90395_CS_GPIO    GPIOB
+#define MLX90395_CS_PIN     GPIO_PIN_1     // PB1
+#define BMP581_CS_GPIO      GPIOA
+#define BMP581_CS_PIN       GPIO_PIN_8     // PA8
 
-#define LORA_FREQ_HZ        434000000U
-#define LORA_SF             7
-#define LORA_BW_CODE        0x08
-#define LORA_CR_CODE        0x01
-#define LORA_PREAMBLE       8
-#define LORA_SYNC_WORD      0x12
-#define LORA_TX_POWER_DB    10
+/* Telemetry: EBYTE E22-900T22D on USART3, transparent UART.  The module
+   itself is configured for 868.125 MHz / 14 dBm / 62.5 kbps (see README). */
+#define E22_UART            huart3
+#define E22_BAUD            9600U
+#define E22_FREQ_HZ         868125000U
+#define E22_TX_POWER_DBM    14
+#define E22_AIR_RATE_BPS    62500U
 
 #define SD_SPI              hspi2
 #define SD_CS_GPIO          GPIOB
@@ -42,7 +39,7 @@
 #define O3_AUX_CHANNEL      ADC_CHANNEL_2
 #define VBAT_CHANNEL        ADC_CHANNEL_5
 #define VBAT_DIVIDER        2.0f
-#define VREF_V              3.3f
+#define VREF_V              3.0f          // 3.0 V LDO rail (Main.md)
 #define ADC_MAX             4095.0f
 
 #define SERVO_TIM           htim8

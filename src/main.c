@@ -3,16 +3,15 @@
 #include "config.h"
 #include "telemetry.h"
 #include "i2c_dev.h"
-#include "bmp280.h"
+#include "bmp581.h"
 #include "ltr390.h"
 #include "tsl2591.h"
 #include "scd30.h"
-#include "bmi270.h"
 #include "mlx90395.h"
 #include "sht45.h"
 #include "rad_counter.h"
 #include "gps_sam_m8q.h"
-#include "lora_sx1276.h"
+#include "radio_e22.h"
 #include "sdlog.h"
 #include "servos.h"
 #include "adc_read.h"
@@ -32,8 +31,8 @@ static void i2c_scan(void)
             found++;
         }
     }
-    printf(found ? "  (expect 0x0C 0x29 0x44 0x53 0x61 0x68 0x76)\r\n"
-                 : "  NONE: check SDA/SCL, pull-ups, 3V3 and GND\r\n");
+    printf(found ? "  (expect 0x29 0x44 0x53 0x61)\r\n"
+                 : "  NONE: check SDA/SCL, pull-ups, 3.0 V and GND\r\n");
 }
 
 int main(void)
@@ -43,34 +42,31 @@ int main(void)
     printf("\r\n[CELESTIUM] booting\r\n");
 
     i2c_scan();
-    frame.ok_bmp = (bmp280_init(&hi2c1) == 0);
+    frame.ok_bmp = (bmp581_init(&SENSOR_SPI) == 0);
     frame.ok_ltr = (ltr390_init(&hi2c1) == 0);
     frame.ok_tsl = (tsl2591_init(&hi2c1) == 0);
     frame.ok_scd = (scd30_init(&hi2c1) == 0);
-    frame.ok_bmi = (bmi270_init(&hi2c1) == 0);
-    frame.ok_mlx = (mlx90395_init(&hi2c1) == 0);
+    frame.ok_mlx = (mlx90395_init(&SENSOR_SPI) == 0);
     frame.ok_sht = (sht45_init(&hi2c1) == 0);
     rad_counter_start();
     gps_init(&huart1);
 
-    int lora_ok = (lora_init(&hspi1) == 0);
+    int radio_ok = (e22_init(&E22_UART) == 0);
     sdlog_init();
     frame.ok_sd = sdlog_ok();
     if (frame.ok_sd) sdlog_write(telemetry_csv_header());
 
-    printf("[CELESTIUM] bmp=%u ltr=%u tsl=%u scd=%u bmi=%u mlx=%u sht=%u "
-           "lora=%u sd=%u\r\n",
+    printf("[CELESTIUM] baro=%u ltr=%u tsl=%u scd=%u mlx=%u sht=%u "
+           "radio=%u sd=%u\r\n",
            frame.ok_bmp, frame.ok_ltr, frame.ok_tsl, frame.ok_scd,
-           frame.ok_bmi, frame.ok_mlx, frame.ok_sht, lora_ok, frame.ok_sd);
-    if (!frame.ok_bmi)
-        printf("[BMI270] missing or config load failed: check addr 0x68 and the config upload\r\n");
-    if (!lora_ok) printf("[LORA] no reply (RegVersion != 0x12): check SPI1, CS PB0, RST PB1\r\n");
-    if (!frame.ok_bmp) printf("[BMP280] missing: primary mission degraded, will keep retrying\r\n");
+           frame.ok_mlx, frame.ok_sht, radio_ok, frame.ok_sd);
+    if (!radio_ok) printf("[E22] UART init failed: check USART3 PC10/PC11\r\n");
+    if (!frame.ok_bmp) printf("[BMP581] missing: primary mission degraded, will keep retrying\r\n");
 
     while (1) {
         uint32_t now = HAL_GetTick();
 
-        lora_busy();
+        e22_busy();
 
         if (now - last_sample >= SAMPLE_PERIOD_MS) {
             last_sample = now;
@@ -89,8 +85,8 @@ int main(void)
             char pkt[256];
             int n = telemetry_json(&frame, pkt, sizeof(pkt));
             if (n > 0 && n < 256) {
-                if (lora_ok && lora_send((const uint8_t *)pkt, (uint8_t)n) != 0)
-                    printf("[LORA] still busy, packet %lu skipped\r\n",
+                if (radio_ok && e22_send((const uint8_t *)pkt, (uint16_t)n) != 0)
+                    printf("[E22] packet %lu failed\r\n",
                            (unsigned long)frame.seq);
                 printf("%s\r\n", pkt);
             }
@@ -98,9 +94,8 @@ int main(void)
 
         if (now - last_retry >= 2000U) {
             last_retry = now;
-            if (!frame.ok_bmp) frame.ok_bmp = (bmp280_init(&hi2c1) == 0);
-            if (!frame.ok_bmi) frame.ok_bmi = (bmi270_init(&hi2c1) == 0);
-            if (!frame.ok_mlx) frame.ok_mlx = (mlx90395_init(&hi2c1) == 0);
+            if (!frame.ok_bmp) frame.ok_bmp = (bmp581_init(&SENSOR_SPI) == 0);
+            if (!frame.ok_mlx) frame.ok_mlx = (mlx90395_init(&SENSOR_SPI) == 0);
             if (!frame.ok_sht) frame.ok_sht = (sht45_init(&hi2c1) == 0);
         }
     }
@@ -111,7 +106,7 @@ static void sample_all(void)
     frame.t_ms = HAL_GetTick();
 
     if (frame.ok_bmp) {
-        bmp280_data_t b;  bmp280_read(&hi2c1, &b);
+        bmp581_data_t b;  bmp581_read(&SENSOR_SPI, &b);
         frame.temp_c       = b.temp_c;
         frame.pressure_hpa = b.pressure_hpa;
         frame.altitude_m   = b.altitude_m;
@@ -135,17 +130,9 @@ static void sample_all(void)
         if (scd30_read(&hi2c1, &s) > 0) frame.co2_ppm = s.co2_ppm;
     }
 
-    if (frame.ok_bmi) {
-        bmi270_data_t m;
-        if (bmi270_read(&hi2c1, &m) > 0) {
-            frame.acc_x = m.acc_x;  frame.acc_y = m.acc_y;  frame.acc_z = m.acc_z;
-            frame.gyr_x = m.gyr_x;  frame.gyr_y = m.gyr_y;  frame.gyr_z = m.gyr_z;
-        }
-    }
-
     if (frame.ok_mlx) {
         mlx90395_data_t m;
-        if (mlx90395_read(&hi2c1, &m) > 0) {
+        if (mlx90395_read(&SENSOR_SPI, &m) > 0) {
             frame.mag_x = m.mag_x;  frame.mag_y = m.mag_y;  frame.mag_z = m.mag_z;
         }
     }

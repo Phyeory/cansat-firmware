@@ -7,3 +7,7 @@ __pycache__/
 *.pyc
 .DS_Store
 flight_*.csv
+
+# Host flight simulator
+sim/build/
+sim/out/

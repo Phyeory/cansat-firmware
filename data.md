@@ -19,10 +19,10 @@ Sensors
 
 Radio
 
-	•	Switched to the output the RFM96W actually has wired. Before, it was barely transmitting.
-	•	Set power to 10 dBm, the UK legal limit.
-	•	Sending no longer freezes the sensors while a packet goes out.
-	•	Settings are fixed so the ground receiver matches them exactly.
+	•	Switched to the E22-900T22D transparent UART link (USART3). The old RFM96W/SPI radio belonged to a different module.
+	•	Set power to 14 dBm for 868.125 MHz, the UK legal limit.
+	•	Sending no longer freezes the sensors while a packet goes out (the E22 write is bounded by a timeout).
+	•	The E22 module and the ground E22-900T22U are configured identically (868.125 MHz, 62.5 kbps).
 
 GPS
 
@@ -43,5 +43,5 @@ Ground station
 
 New files
 
-	•	lora_receiver.ino: the Pico code that receives the radio packets. It didn't exist before.
+	•	Removed lora_receiver.ino: the E22-900T22U USB module replaces the Pico/RFM96W bridge.
 	•	WIRING.md: a PCB checklist and first power-up guide.

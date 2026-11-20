@@ -5,13 +5,15 @@ SPI_HandleTypeDef  hspi1;
 SPI_HandleTypeDef  hspi2;
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart3;
 ADC_HandleTypeDef  hadc2;
 TIM_HandleTypeDef  htim8;
 
 static void clock_init(void);
 static void gpio_init(void);
 static void i2c1_init(void);
-static void spi_init(SPI_HandleTypeDef *h, SPI_TypeDef *inst, uint32_t prescaler);
+static void spi_init(SPI_HandleTypeDef *h, SPI_TypeDef *inst, uint32_t prescaler,
+                     uint32_t cpol, uint32_t cpha);
 static void uart_init(UART_HandleTypeDef *h, USART_TypeDef *inst, uint32_t baud);
 static void adc2_init(void);
 static void tim8_init(void);
@@ -39,13 +41,17 @@ void board_init(void)
     __HAL_RCC_SPI1_CLK_ENABLE();
     af_pin(GPIOA, GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7, GPIO_AF5_SPI1,
            GPIO_MODE_AF_PP, GPIO_NOPULL);
-    spi_init(&hspi1, SPI1, SPI_BAUDRATEPRESCALER_16);
+    /* Sensor bus: MLX90395 + BMP581, both SPI mode 3 (CPOL=CPHA=1).
+       170 MHz / 32 = 5.3 MHz, inside every part's 10 MHz limit. */
+    spi_init(&hspi1, SPI1, SPI_BAUDRATEPRESCALER_32,
+             SPI_POLARITY_HIGH, SPI_PHASE_2EDGE);
 
     __HAL_RCC_SPI2_CLK_ENABLE();
     af_pin(GPIOB, GPIO_PIN_13 | GPIO_PIN_15, GPIO_AF5_SPI2,
            GPIO_MODE_AF_PP, GPIO_NOPULL);
     af_pin(GPIOB, GPIO_PIN_14, GPIO_AF5_SPI2, GPIO_MODE_AF_PP, GPIO_PULLUP);
-    spi_init(&hspi2, SPI2, SPI_BAUDRATEPRESCALER_256);
+    spi_init(&hspi2, SPI2, SPI_BAUDRATEPRESCALER_256,
+             SPI_POLARITY_LOW, SPI_PHASE_1EDGE);
 
     __HAL_RCC_USART1_CLK_ENABLE();
     af_pin(GPIOA, GPIO_PIN_9,  GPIO_AF7_USART1, GPIO_MODE_AF_PP, GPIO_NOPULL);
@@ -56,6 +62,11 @@ void board_init(void)
     af_pin(GPIOA, GPIO_PIN_2, GPIO_AF7_USART2, GPIO_MODE_AF_PP, GPIO_NOPULL);
     af_pin(GPIOA, GPIO_PIN_3, GPIO_AF7_USART2, GPIO_MODE_AF_PP, GPIO_PULLUP);
     uart_init(&huart2, USART2, 115200U);
+
+    __HAL_RCC_USART3_CLK_ENABLE();
+    af_pin(GPIOC, GPIO_PIN_10, GPIO_AF7_USART3, GPIO_MODE_AF_PP, GPIO_NOPULL);
+    af_pin(GPIOC, GPIO_PIN_11, GPIO_AF7_USART3, GPIO_MODE_AF_PP, GPIO_PULLUP);
+    uart_init(&huart3, USART3, E22_BAUD);
 
     adc2_init();
     tim8_init();
@@ -102,22 +113,17 @@ static void gpio_init(void)
     __HAL_RCC_GPIOC_CLK_ENABLE();
 
     /* Avoid a chip-select glitch while changing the pins to outputs. */
-    HAL_GPIO_WritePin(LORA_CS_GPIO, LORA_CS_PIN, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(LORA_RST_GPIO, LORA_RST_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(MLX90395_CS_GPIO, MLX90395_CS_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(BMP581_CS_GPIO, BMP581_CS_PIN, GPIO_PIN_SET);
     HAL_GPIO_WritePin(SD_CS_GPIO, SD_CS_PIN, GPIO_PIN_SET);
 
     GPIO_InitTypeDef g = {0};
     g.Mode  = GPIO_MODE_OUTPUT_PP;
     g.Pull  = GPIO_NOPULL;
     g.Speed = GPIO_SPEED_FREQ_HIGH;
-    g.Pin = LORA_CS_PIN;  HAL_GPIO_Init(LORA_CS_GPIO, &g);
-    g.Pin = LORA_RST_PIN; HAL_GPIO_Init(LORA_RST_GPIO, &g);
-    g.Pin = SD_CS_PIN;    HAL_GPIO_Init(SD_CS_GPIO, &g);
-
-    g.Pin  = LORA_DIO0_PIN;
-    g.Mode = GPIO_MODE_INPUT;
-    g.Pull = GPIO_PULLDOWN;
-    HAL_GPIO_Init(LORA_DIO0_GPIO, &g);
+    g.Pin = MLX90395_CS_PIN; HAL_GPIO_Init(MLX90395_CS_GPIO, &g);
+    g.Pin = BMP581_CS_PIN;   HAL_GPIO_Init(BMP581_CS_GPIO, &g);
+    g.Pin = SD_CS_PIN;       HAL_GPIO_Init(SD_CS_GPIO, &g);
 }
 
 static void i2c1_init(void)
@@ -140,14 +146,15 @@ static void i2c1_init(void)
     HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0);
 }
 
-static void spi_init(SPI_HandleTypeDef *h, SPI_TypeDef *inst, uint32_t prescaler)
+static void spi_init(SPI_HandleTypeDef *h, SPI_TypeDef *inst, uint32_t prescaler,
+                     uint32_t cpol, uint32_t cpha)
 {
     h->Instance               = inst;
     h->Init.Mode              = SPI_MODE_MASTER;
     h->Init.Direction         = SPI_DIRECTION_2LINES;
     h->Init.DataSize          = SPI_DATASIZE_8BIT;
-    h->Init.CLKPolarity       = SPI_POLARITY_LOW;
-    h->Init.CLKPhase          = SPI_PHASE_1EDGE;
+    h->Init.CLKPolarity       = cpol;
+    h->Init.CLKPhase          = cpha;
     h->Init.NSS               = SPI_NSS_SOFT;
     h->Init.BaudRatePrescaler = prescaler;
     h->Init.FirstBit          = SPI_FIRSTBIT_MSB;

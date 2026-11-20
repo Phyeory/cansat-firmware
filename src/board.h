@@ -7,6 +7,7 @@ extern SPI_HandleTypeDef  hspi1;
 extern SPI_HandleTypeDef  hspi2;
 extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef huart3;
 extern ADC_HandleTypeDef  hadc2;
 extern TIM_HandleTypeDef  htim8;
 
