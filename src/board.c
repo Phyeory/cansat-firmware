@@ -41,7 +41,7 @@ void board_init(void)
     __HAL_RCC_SPI1_CLK_ENABLE();
     af_pin(GPIOA, GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7, GPIO_AF5_SPI1,
            GPIO_MODE_AF_PP, GPIO_NOPULL);
-    /* Sensor bus: MLX90395 + BMP581, both SPI mode 3 (CPOL=CPHA=1).
+    /* Sensor bus: LSM6DSV + MLX90395 + BMP581, all SPI mode 3 (CPOL=CPHA=1).
        170 MHz / 32 = 5.3 MHz, inside every part's 10 MHz limit. */
     spi_init(&hspi1, SPI1, SPI_BAUDRATEPRESCALER_32,
              SPI_POLARITY_HIGH, SPI_PHASE_2EDGE);
@@ -113,6 +113,7 @@ static void gpio_init(void)
     __HAL_RCC_GPIOC_CLK_ENABLE();
 
     /* Avoid a chip-select glitch while changing the pins to outputs. */
+    HAL_GPIO_WritePin(LSM6DSV_CS_GPIO, LSM6DSV_CS_PIN, GPIO_PIN_SET);
     HAL_GPIO_WritePin(MLX90395_CS_GPIO, MLX90395_CS_PIN, GPIO_PIN_SET);
     HAL_GPIO_WritePin(BMP581_CS_GPIO, BMP581_CS_PIN, GPIO_PIN_SET);
     HAL_GPIO_WritePin(SD_CS_GPIO, SD_CS_PIN, GPIO_PIN_SET);
@@ -121,6 +122,7 @@ static void gpio_init(void)
     g.Mode  = GPIO_MODE_OUTPUT_PP;
     g.Pull  = GPIO_NOPULL;
     g.Speed = GPIO_SPEED_FREQ_HIGH;
+    g.Pin = LSM6DSV_CS_PIN;  HAL_GPIO_Init(LSM6DSV_CS_GPIO, &g);
     g.Pin = MLX90395_CS_PIN; HAL_GPIO_Init(MLX90395_CS_GPIO, &g);
     g.Pin = BMP581_CS_PIN;   HAL_GPIO_Init(BMP581_CS_GPIO, &g);
     g.Pin = SD_CS_PIN;       HAL_GPIO_Init(SD_CS_GPIO, &g);

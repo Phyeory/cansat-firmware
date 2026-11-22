@@ -133,8 +133,13 @@ static uint16_t mv_to_raw(double mv)
 static void drive_devices(void)
 {
     double alt = st.alt_m;
+    double gx = 0.0, gy = 0.0, gz = 0.0;
+
+    if (st.phase == SIM_BOOST) { gx = 12.0; gy = -4.0; gz = 3.0; }
 
     fdev_bmp581_set_env((float)st.temp_c, (float)st.pressure_hpa);
+    fdev_lsm6dsv_set_motion(0.0f, 0.0f, (float)(st.accel_g * GRAVITY),
+                            (float)gx, (float)gy, (float)gz);
     fdev_sht45_set((float)(st.temp_c + 0.8), (float)st.rh_pct);
     fdev_scd30_set(421.0f, (float)st.temp_c, (float)st.rh_pct);
     fdev_ltr390_set_uvs((uint32_t)(2000.0 + 40.0 * alt));
@@ -249,6 +254,7 @@ void sim_init(void)
     fdev_reset();
 
     fdev_bmp581_enable();
+    fdev_lsm6dsv_enable();
     fdev_scd30_enable();
     fdev_sht45_enable();
     fdev_mlx90395_enable();

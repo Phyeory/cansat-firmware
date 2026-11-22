@@ -129,6 +129,70 @@ void fdev_bmp581_enable(void)
 
 void fdev_bmp581_disable(void) { bmp581.present = 0; }
 
+/* ================================================================ LSM6DSV */
+
+typedef struct {
+    uint8_t regs[256];
+    int     present;
+} lsm_t;
+
+static lsm_t lsm;
+
+void fdev_lsm6dsv_set_motion(float ax, float ay, float az,
+                             float gx, float gy, float gz)
+{
+    int16_t raw[6];
+    raw[0] = (int16_t)lrintf(ax / 9.80665f * 4096.0f);
+    raw[1] = (int16_t)lrintf(ay / 9.80665f * 4096.0f);
+    raw[2] = (int16_t)lrintf(az / 9.80665f * 4096.0f);
+    raw[3] = (int16_t)lrintf(gx * 14.285714f);
+    raw[4] = (int16_t)lrintf(gy * 14.285714f);
+    raw[5] = (int16_t)lrintf(gz * 14.285714f);
+
+    /* 0x22..0x27 = gyro, 0x28..0x2D = accel. */
+    for (int i = 0; i < 3; i++) {
+        lsm.regs[0x22 + 2 * i]     = (uint8_t)(raw[3 + i] & 0xFF);
+        lsm.regs[0x22 + 2 * i + 1] = (uint8_t)((uint16_t)raw[3 + i] >> 8);
+        lsm.regs[0x28 + 2 * i]     = (uint8_t)(raw[i] & 0xFF);
+        lsm.regs[0x28 + 2 * i + 1] = (uint8_t)((uint16_t)raw[i] >> 8);
+    }
+}
+
+uint8_t fdev_lsm6dsv_reg(uint8_t reg) { return lsm.regs[reg]; }
+void fdev_lsm6dsv_set_reg(uint8_t reg, uint8_t val) { lsm.regs[reg] = val; }
+
+static HAL_StatusTypeDef lsm_spi(uint8_t *tx, uint8_t *rx, uint16_t n)
+{
+    if (!lsm.present || n < 1) return HAL_ERROR;
+
+    uint8_t addr = (uint8_t)(tx[0] & 0x7F);
+    if (tx[0] & 0x80) {
+        if (rx) {
+            rx[0] = 0;
+            for (uint16_t i = 1; i < n; i++)
+                rx[i] = lsm.regs[(uint8_t)(addr + i - 1)];
+        }
+    } else {
+        if (n >= 2) {
+            for (uint16_t i = 1; i < n; i++)
+                lsm.regs[(uint8_t)(addr + i - 1)] = tx[i];
+        }
+        if (rx) memset(rx, 0, n);
+    }
+    return HAL_OK;
+}
+
+void fdev_lsm6dsv_enable(void)
+{
+    memset(&lsm, 0, sizeof(lsm));
+    lsm.present = 1;
+    lsm.regs[0x0F] = 0x70;             /* WHO_AM_I */
+    fdev_lsm6dsv_set_motion(0.0f, 0.0f, 9.80665f, 0.0f, 0.0f, 0.0f);
+    fake_spi_set_handler(fdev_spi_dispatch);
+}
+
+void fdev_lsm6dsv_disable(void) { lsm.present = 0; }
+
 /* ================================================================== SCD30 */
 
 typedef struct {
@@ -500,6 +564,7 @@ static HAL_StatusTypeDef fdev_spi_dispatch(SPI_HandleTypeDef *h,
 {
     (void)h;
     if (cs_low(BMP581_CS_GPIO, BMP581_CS_PIN))     return bmp581_spi(tx, rx, n);
+    if (cs_low(LSM6DSV_CS_GPIO, LSM6DSV_CS_PIN))   return lsm_spi(tx, rx, n);
     if (cs_low(MLX90395_CS_GPIO, MLX90395_CS_PIN)) return mlx_spi(tx, rx, n);
     return HAL_OK;
 }
@@ -507,6 +572,7 @@ static HAL_StatusTypeDef fdev_spi_dispatch(SPI_HandleTypeDef *h,
 void fdev_spi_cs_idle(void)
 {
     HAL_GPIO_WritePin(BMP581_CS_GPIO, BMP581_CS_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(LSM6DSV_CS_GPIO, LSM6DSV_CS_PIN, GPIO_PIN_SET);
     HAL_GPIO_WritePin(MLX90395_CS_GPIO, MLX90395_CS_PIN, GPIO_PIN_SET);
 }
 
@@ -515,6 +581,7 @@ void fdev_spi_cs_idle(void)
 void fdev_reset(void)
 {
     memset(&bmp581, 0, sizeof(bmp581));
+    memset(&lsm, 0, sizeof(lsm));
     memset(&scd, 0, sizeof(scd));
     memset(&sht, 0, sizeof(sht));
     memset(&mlx, 0, sizeof(mlx));

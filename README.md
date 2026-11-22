@@ -8,7 +8,7 @@ running on an **STM32G474RE** on a custom PCB, configured with
 The board is configured in `stm32g474.ioc` (CubeMX); the firmware talks to
 the peripherals directly (`HAL_I2C`, `HAL_SPI`, `HAL_UART`, `HAL_ADC`,
 `HAL_TIM`) with small self-contained drivers: no Arduino layer, no heavy
-vendor libraries. Embedded protocols in use: **SPI** (magnetometer,
+vendor libraries. Embedded protocols in use: **SPI** (IMU, magnetometer,
 barometer, SD), **I²C** (UV/light/CO₂/environment), **UART** (GPS, E22
 telemetry, debug), **PWM** (servos), analog **ADC** (O3 cell, battery).
 
@@ -22,6 +22,7 @@ telemetry, debug), **PWM** (servos), analog **ADC** (O3 cell, battery).
 | IR / light | TSL2591 | I²C1 @ 0x29 |
 | CO₂ | SCD30 | I²C1 @ 0x61 |
 | Ozone | Alphasense O3-B4 | ADC (PA0 work / PA1 aux, differential) |
+| IMU (accel + gyro) | ST **LSM6DSV** | SPI1, CS PB0 (mode 3) |
 | Magnetometer | Melexis **MLX90395** | SPI1, CS PB1 (mode 3) |
 | Humidity + 2nd temp | Sensirion SHT45 | I²C1 @ 0x44 |
 | Radiation counter | BPW34 S-Z + comparator | EXTI PB10 (falling-edge pulses) |
@@ -41,18 +42,17 @@ The pin map lives in [`src/config.h`](src/config.h) and is mirrored in
 - **Primary**: temperature + pressure → altitude, transmitted **once per
   second** as JSON over the E22 (rule-compliant, frequency alterable).
 - **Secondary**: atmospheric radiation & gas profiling: UV/IR intensity and
-  CO₂/O₃ concentration vs altitude, plus the MLX90395 magnetometer, humidity
-  (SHT45 → dew point / absolute humidity post-flight) and BPW34 radiation
-  pulse counting. Full 10 Hz stream goes to SD so data survives a telemetry
-  drop; the 1 Hz downlink also carries RH and pulses-per-second for live
-  monitoring.
+  CO₂/O₃ concentration vs altitude, plus motion profiling (LSM6DSV IMU,
+  MLX90395 magnetometer), humidity (SHT45 → dew point / absolute humidity
+  post-flight) and BPW34 radiation pulse counting. Full 10 Hz stream goes to
+  SD so data survives a telemetry drop; the 1 Hz downlink also carries
+  accel, gyro, RH and pulses-per-second for live monitoring.
 
-**No IMU is fitted.** The BMI270 was removed from the design, so accel/gyro
-are not sampled, logged or transmitted. The online baro KF remains a design
-target in [`docs/DATA-PIPELINE.md`](docs/DATA-PIPELINE.md) §6 and
-[`docs/KALMAN-NOISE.md`](docs/KALMAN-NOISE.md); the attitude/trajectory EKFs
-are not buildable without an IMU and are not implemented. The firmware
-currently logs raw sensor data only.
+**Estimation status:** there is **no EKF in the firmware**. The online
+baro/accel KF and the offline attitude/trajectory EKFs are design targets in
+[`docs/DATA-PIPELINE.md`](docs/DATA-PIPELINE.md) §6 and
+[`docs/KALMAN-NOISE.md`](docs/KALMAN-NOISE.md), not implemented code. The
+firmware currently logs raw sensor data only.
 
 ## Getting started (CubeMX workflow)
 
@@ -85,6 +85,7 @@ src/config.h           pin map & flight constants (edit for the PCB)
 src/board.c/.h         clock tree + all peripheral init (CubeMX mirror)
 src/main.c             flight loop: 10 Hz sampling, 1 Hz telemetry
 src/bmp581.c/.h        BMP581 barometer driver (SPI, calibrated 24-bit words)
+src/lsm6dsv.c/.h       LSM6DSV IMU driver (SPI, 120 Hz, ±8 g / ±2000 dps)
 src/ltr390.c/.h        LTR390 UV driver
 src/tsl2591.c/.h       TSL2591 light driver
 src/scd30.c/.h         SCD30 CO2 driver (I2C, CRC-checked)
@@ -129,8 +130,8 @@ VS Code will recommend the embedded C/C++ and Python extensions from
   868.0–868.6 MHz UK limit. The E22 must be configured for 62.5 kbps
   transparent mode; the firmware only writes bytes to USART3.
 - Data redundancy: every transmitted packet is also written to the SD card.
-- **Open RF check:** the JSON packet is ~152 B typical / ~186 B worst case.
-  At 62.5 kbps that is ~19–24 ms of airtime, i.e. ~2.0–2.4 % duty at 1 Hz,
+- **Open RF check:** the JSON packet is ~200 B typical / ~250 B worst case.
+  At 62.5 kbps that is ~26–32 ms of airtime, i.e. ~2.6–3.2 % duty at 1 Hz,
   above the 1 % limit for 868.0–868.6 MHz. The SD log is unaffected; if the
   rules are enforced strictly, the downlink needs a compact (≤78 B) packet
   or a different band.

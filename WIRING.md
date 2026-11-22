@@ -29,19 +29,17 @@ never runs**. Fix once per chip, before anything else, in
 
 ## 2. SPI sensor bus (SPI1, mode 3)
 
-The magnetometer and barometer are **both SPI**, on one shared bus. They
+The IMU, magnetometer and barometer are **all SPI**, on one shared bus. They
 each have their own chip select:
 
 | Device | SPI signal | CS | Notes |
 |---|---|---|---|
-| MLX90395 | SCK = PA5, MISO = PA6, MOSI = PA7 | **PB1** | Mode 3, 16-bit command frames |
+| LSM6DSV | SCK = PA5, MISO = PA6, MOSI = PA7 | **PB0** | Mode 3, 120 Hz, ±8 g / ±2000 dps |
+| MLX90395 | same bus | **PB1** | Mode 3, 16-bit command frames |
 | BMP581 | same bus | **PA8** | Mode 3, 24-bit calibrated data |
 
-PB0 is unused on this build (it was the BMI270 chip select before the IMU was
-removed), so leave it unconnected or tie it high.
-
 - [ ] One 100 nF decoupling cap per device, right at its VDD pin.
-- [ ] Both CS lines have 10 kΩ pull-ups to 3.0 V, so they stay inactive
+- [ ] All three CS lines have 10 kΩ pull-ups to 3.0 V, so they stay inactive
       while the MCU is resetting.
 - [ ] The BMP581 starts in I²C mode and switches to SPI on the first CS edge;
       the driver performs the datasheet's dummy read before using it.
@@ -101,6 +99,11 @@ A bare photodiode cannot drive a GPIO — the PCB needs a front end:
 PC4 is ADC2_IN5 and is **not** on ADC1.
 
 ## 7. GPS (u-blox SAM-M8Q, USART1, 9600 baud)
+
+> **SPI2 is not available on this module.** The SAM-M8Q exposes UART and
+> DDC/I²C only (u-blox UBX-16018358, pin table); it has no SPI pins. The
+> requested SPI2 link needs a different GNSS part (or a bridge), so the
+> firmware keeps the UART path until that part is confirmed.
 
 | SAM-M8Q pin | Net |
 |---|---|
@@ -168,13 +171,13 @@ The E22 is a transparent UART module: no SPI, no RF layout, no library.
    - I2C scan should list `0x29 0x44 0x53 0x61`. A missing address means that
      chip's solder joints, strapping pins or power.
    - `NONE` means the pull-ups, PB8/PB9 routing or the 3.0 V rail.
-   - `baro=1`, `mlx=1` mean the two SPI devices answered. A zero usually
-     means the CS line, the SPI1 mode/pins or that device's power.
+   - `baro=1`, `imu=1`, `mlx=1` mean the three SPI devices answered. A zero
+     usually means the CS line, the SPI1 mode/pins or that device's power.
    - `radio=1` means USART3 initialised. `radio=0` means check PC10/PC11.
 6. **Watch the JSON lines.** `"h"` is the health bitmask: bit0 BMP581, 1 LTR,
-   2 TSL, 3 SCD, 4 GPS data arriving, 5 GPS fix, 6 SD, 7 MLX90395,
-   8 SHT45, 9 RAD counter (1 = a pulse seen in the last 60 s). All ten
-   bits set reads as **1023 (0x3FF)**; bit 9 only lights once the BPW34
-   front end pulses.
+   2 TSL, 3 SCD, 4 GPS data arriving, 5 GPS fix, 6 SD, 7 LSM6DSV,
+   8 MLX90395, 9 SHT45, 10 RAD counter (1 = a pulse seen in the last 60 s).
+   All eleven bits set reads as **2047 (0x7FF)**; bit 10 only lights once the
+   BPW34 front end pulses.
 7. **Ground side:** connect the E22-900T22U USB module, run `station.py`,
    and check the same packets arrive.

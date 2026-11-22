@@ -28,6 +28,18 @@ void fdev_reset(void);
 uint8_t fdev_reg(uint8_t addr7, uint8_t reg);
 void    fdev_set_reg(uint8_t addr7, uint8_t reg, uint8_t val);
 
+/* ------------------------------------------------------------------ LSM6DSV */
+
+void fdev_lsm6dsv_enable(void);
+void fdev_lsm6dsv_disable(void);
+/* m/s^2 and deg/s, converted to raw LSB with the driver's scales
+   (+/-8 g and +/-2000 dps). */
+void fdev_lsm6dsv_set_motion(float ax, float ay, float az,
+                             float gx, float gy, float gz);
+/* Register file, as the driver left it (for assertions). */
+uint8_t fdev_lsm6dsv_reg(uint8_t reg);
+void    fdev_lsm6dsv_set_reg(uint8_t reg, uint8_t val);
+
 /* ------------------------------------------------------------------ BMP581 */
 
 void fdev_bmp581_enable(void);

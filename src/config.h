@@ -9,9 +9,11 @@
 #define SCD30_I2C_ADDR      (0x61U << 1)
 #define SHT45_I2C_ADDR      (0x44U << 1)
 
-/* Shared sensor SPI bus.  MLX90395 and BMP581 each have their own chip
-   select and both use SPI mode 3 (see board.c). */
+/* Shared sensor SPI bus.  LSM6DSV, MLX90395 and BMP581 each have their own
+   chip select and all use SPI mode 3 (see board.c). */
 #define SENSOR_SPI          hspi1
+#define LSM6DSV_CS_GPIO     GPIOB
+#define LSM6DSV_CS_PIN      GPIO_PIN_0     // PB0
 #define MLX90395_CS_GPIO    GPIOB
 #define MLX90395_CS_PIN     GPIO_PIN_1     // PB1
 #define BMP581_CS_GPIO      GPIOA
@@ -29,6 +31,9 @@
 #define SD_CS_GPIO          GPIOB
 #define SD_CS_PIN           GPIO_PIN_12
 
+/* SAM-M8Q: UART (USART1) is the wired interface.  The module has no SPI
+   pins (u-blox UBX-16018358: UART + DDC/I2C only), so the requested SPI2
+   link needs a different GNSS part or a bridge. */
 #define GPS_UART            huart1
 #define GPS_BAUD            9600U
 

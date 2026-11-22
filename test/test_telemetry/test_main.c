@@ -29,6 +29,12 @@ static flight_frame_t full_frame(void)
     f.gps_lon      = 4.56789;
     f.gps_alt_m    = 12.0f;
     f.gps_sats     = 9;
+    f.acc_x        = 0.5f;
+    f.acc_y        = -0.4f;
+    f.acc_z        = 9.8f;
+    f.gyr_x        = 5.0f;
+    f.gyr_y        = -3.0f;
+    f.gyr_z        = 0.0f;
     f.mag_x        = 24.0f;
     f.mag_y        = -6.0f;
     f.mag_z        = 42.0f;
@@ -37,7 +43,7 @@ static flight_frame_t full_frame(void)
     f.rad_cps      = 12;
     f.vbat_v       = 4.10f;
     f.ok_bmp = f.ok_ltr = f.ok_tsl = f.ok_scd = 1;
-    f.ok_gps = f.gps_fix = f.ok_sd = 1;
+    f.ok_gps = f.gps_fix = f.ok_sd = f.ok_imu = 1;
     f.ok_mlx = f.ok_sht = f.ok_rad = 1;
     return f;
 }
@@ -47,19 +53,21 @@ static const char *JSON_GOLDEN =
     "\"uv\":1200,"
     "\"co2\":420,\"o3\":12.3,"
     "\"la\":52.12345,\"lo\":4.56789,\"ga\":12,\"s\":9,"
+    "\"ax\":0.5,\"ay\":-0.4,\"az\":9.8,"
+    "\"gx\":5,\"gy\":-3,\"gz\":0,"
     "\"rh\":45.5,\"rad\":12,"
-    "\"v\":4.10,\"h\":1023}";
+    "\"v\":4.10,\"h\":2047}";
 
 static const char *CSV_GOLDEN =
     "12345,21.50,1006.50,56.00,1200.0,1.25,100.0,2000.0,33.5,420,12.3,"
     "52.12345,4.56789,12.0,9,4.10,"
-    "24.0,-6.0,42.0,"
-    "45.5,22.25,12,1023";
+    "0.50,-0.40,9.80,5.0,-3.0,0.0,24.0,-6.0,42.0,"
+    "45.5,22.25,12,2047";
 
-static void test_health_all_ok_is_0x3ff(void)
+static void test_health_all_ok_is_0x7ff(void)
 {
     flight_frame_t f = full_frame();
-    TEST_ASSERT_EQUAL_HEX16(0x03FF, telemetry_health(&f));
+    TEST_ASSERT_EQUAL_HEX16(0x07FF, telemetry_health(&f));
 }
 
 static void test_health_zero_and_single_bits(void)
@@ -71,7 +79,7 @@ static void test_health_zero_and_single_bits(void)
     f.ok_sd = 1;   TEST_ASSERT_EQUAL_HEX16(1u << 6, telemetry_health(&f));
     f.ok_sd = 0;
     f.gps_fix = 1; TEST_ASSERT_EQUAL_HEX16(1u << 5, telemetry_health(&f));
-    f.ok_rad = 1;  TEST_ASSERT_EQUAL_HEX16((1u << 5) | (1u << 9), telemetry_health(&f));
+    f.ok_rad = 1;  TEST_ASSERT_EQUAL_HEX16((1u << 5) | (1u << 10), telemetry_health(&f));
 }
 
 static void test_gps_data_and_fix_are_separate_bits(void)
@@ -101,7 +109,7 @@ static void test_csv_header_golden(void)
     TEST_ASSERT_EQUAL_STRING(
         "t_ms,temp_c,pressure_hpa,alt_m,uv_raw,uv_index,ir_counts,"
         "full_counts,lux,co2_ppm,o3_ppb,lat,lon,gps_alt_m,sats,vbat_v,"
-        "mag_x,mag_y,mag_z,"
+        "acc_x,acc_y,acc_z,gyr_x,gyr_y,gyr_z,mag_x,mag_y,mag_z,"
         "rh_pct,sht_temp_c,rad_cps,health",
         telemetry_csv_header());
 }
@@ -131,6 +139,8 @@ static void test_packet_fits_the_e22_buffer(void)
     flight_frame_t f = full_frame();
     f.temp_c = -40.0f; f.pressure_hpa = 1100.0f; f.altitude_m = 12345.0f;
     f.gps_lat = -89.99999; f.gps_lon = -179.99999; f.gps_alt_m = 99999.0f;
+    f.acc_x = -160.0f; f.acc_y = -160.0f; f.acc_z = -160.0f;
+    f.gyr_x = -32000.0f; f.gyr_y = -32000.0f; f.gyr_z = -32000.0f;
     f.o3_ppb = -999.9f; f.vbat_v = 9.99f;
 
     char buf[256];
@@ -142,7 +152,7 @@ static void test_packet_fits_the_e22_buffer(void)
 int main(void)
 {
     UNITY_BEGIN();
-    RUN_TEST(test_health_all_ok_is_0x3ff);
+    RUN_TEST(test_health_all_ok_is_0x7ff);
     RUN_TEST(test_health_zero_and_single_bits);
     RUN_TEST(test_gps_data_and_fix_are_separate_bits);
     RUN_TEST(test_json_golden);

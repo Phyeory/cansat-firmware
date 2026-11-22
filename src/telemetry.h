@@ -11,6 +11,8 @@ typedef struct {
     float ir_counts, full_counts, lux;
     float co2_ppm;
     float o3_ppb;
+    float acc_x, acc_y, acc_z;
+    float gyr_x, gyr_y, gyr_z;
     float mag_x, mag_y, mag_z;
     float rh_pct;
     float sht_temp_c;
@@ -22,7 +24,7 @@ typedef struct {
     float vbat_v;
     uint8_t ok_bmp;   /* BMP581 barometer */
     uint8_t ok_ltr, ok_tsl, ok_scd, ok_gps, ok_sd;
-    uint8_t ok_mlx, ok_sht, ok_rad;
+    uint8_t ok_imu, ok_mlx, ok_sht, ok_rad;
 } flight_frame_t;
 
 uint16_t telemetry_health(const flight_frame_t *f);

@@ -16,6 +16,7 @@ Sensors
 	•	Light sensor: settings now match its maths (it was using the wrong gain and timing).
 	•	UV sensor: fixed the UV index, which was about 24 times too low.
 	•	CO₂ sensor: added the short waits it needs, plus a wait for it to boot up.
+	•	IMU: replaced the BMI270 with an LSM6DSV on SPI1 (CS PB0).
 
 Radio
 
@@ -29,6 +30,7 @@ GPS
 	•	It now catches every byte using an interrupt. Before, most of the data was lost.
 	•	Fixed the parser, which broke when there was no GPS fix.
 	•	Bad or corrupted sentences are now thrown away.
+	•	Still UART: the SAM-M8Q has no SPI pins (UART/DDC only), so the requested SPI2 link needs a different GNSS module.
 
 Main program
 

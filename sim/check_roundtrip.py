@@ -29,7 +29,7 @@ APOGEE_TOL = 0.05          # plan: +-5 %
 DESCENT_MPS = 10.0
 DESCENT_TOL = 1.0
 REQUIRED_BITS = ("baro", "ltr", "tsl", "scd", "gpsdata", "gpsfix",
-                 "sd", "mlx90395", "sht45", "rad")
+                 "sd", "lsm6dsv", "mlx90395", "sht45", "rad")
 
 results: list[tuple[bool, str, str]] = []
 
@@ -115,6 +115,10 @@ def main() -> int:
     isa_temp = 15.0 - 0.0065 * apogee
     check(f"temperature at apogee {temp_apogee:.1f} C follows ISA",
           abs(temp_apogee - isa_temp) < 2.0, f"expected {isa_temp:.1f} C")
+
+    acc = sd.get_acc("z")
+    acc_boost = float(np.nanmax(acc))
+    check("accelerometer saw the boost", acc_boost > 3.0, f"{acc_boost:.1f} m/s^2")
 
     # ---- GPS path (NMEA -> USART ISR -> parser -> telemetry) -------------
     fix = sd.get_gps(t_apogee, max_age_s=5.0)

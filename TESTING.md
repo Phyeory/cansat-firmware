@@ -9,7 +9,7 @@ Three layers, each answering a different question:
 | Round-trip check | `python sim/check_roundtrip.py` | Can the ground-station analysis library read what we produced? |
 
 The target firmware is untouched by all of this: `pio run -e stm32g474` still
-builds the same image (~45.5 KB flash / 2.8 KB RAM, verified after the work
+builds the same image (~46.5 KB flash / 2.8 KB RAM, verified after the work
 below).
 
 ---
@@ -17,7 +17,7 @@ below).
 ## 1. Unit tests
 
 ```
-pio test -e native                 # all 13 suites, 106 cases
+pio test -e native                 # all 14 suites, 114 cases
 pio test -e native -f test_bmp581  # one suite
 ```
 
@@ -46,9 +46,10 @@ symbol the stub lacks, add it there — never add host-only code to `src/`.
 | Suite | Cases | Golden vectors / behaviour |
 |---|---|---|
 | `test_i2c_crc8` | 7 | Sensirion CRC-8 (`0xBEEF`→0x92, `"123456789"`→0xF7) |
-| `test_telemetry` | 8 | JSON/CSV field order, packet-size bound, health bitmask 0x3FF |
+| `test_telemetry` | 8 | JSON/CSV field order, packet-size bound, health bitmask 0x7FF |
 | `test_gps` | 8 | Real `USART1_IRQHandler` fed byte by byte; NMEA checksums, N/S/E/W, void and no-fix sentences |
 | `test_bmp581` | 9 | Calibrated 24-bit words, OSR/ODR register image, ISA altitude sweep to 2 km |
+| `test_lsm6dsv` | 8 | WHO_AM_I, BDU/IF_INC + ODR/FS image, ±8 g / ±2000 dps scaling, bus-loss path |
 | `test_scd30` | 10 | Command framing with CRC'd argument words, three-float measurement reassembly, CRC reject (`-3`) |
 | `test_sht45` | 9 | Two-call poll state machine, 10 ms conversion NACK, 1 Hz cadence, CRC drop, clamping |
 | `test_mlx90395` | 9 | Command/status protocol, SM-mode and DRDY gates, 0.714 µT/LSB scaling, signed full scale |
@@ -67,6 +68,8 @@ fake bug:
 
 * **BMP581** — calibrated 24-bit temperature/pressure words synthesised from
   an environment; the OSR/ODR register image is asserted after init.
+* **LSM6DSV** — 0x70 ID, register writes, and 12 bytes of little-endian
+  gyro/accel data synthesised from a scripted motion.
 * **SCD30** — big-endian commands with CRC'd argument words; a bad CRC is a
   NACK, and measurement CRCs can be corrupted on demand.
 * **SHT45** — genuinely NACKs reads until the 10 ms conversion has elapsed, so
@@ -114,14 +117,14 @@ Profile (closed form, solved in `sim/world.c`):
 | Phase | Time | State |
 |---|---|---|
 | Pad | 0–5 s | 0 m, 1 g, 1013.25 hPa |
-| Boost | 5–8 s | 35.8 m/s² net → 107.5 m/s at 161 m |
+| Boost | 5–8 s | 35.8 m/s² net → 107.5 m/s at 161 m; 4.6 g on the accelerometer |
 | Coast | 8–18.96 s | free fall, 0 g |
 | Descent | 18.96–93.96 s | parachute, exactly 10 m/s, 750 m → 0 m |
 | Landed | +2 s | 1 g, then the process exits |
 
 Everything the firmware samples is driven from that state: BMP581 pressure and
-temperature (ISA), SHT45/SCD30 temperature and humidity, LTR390 UV and
-TSL2591 counts scaling with altitude,
+temperature (ISA), LSM6DSV specific force and boost rotation, SHT45/SCD30
+temperature and humidity, LTR390 UV and TSL2591 counts scaling with altitude,
 a fixed magnetometer field, ADC channels for O3 and the 4.02 V pack, 4 rad
 pulses/s on the EXTI line, and 1 Hz `$GPGGA`/`$GPRMC` sentences pushed byte by
 byte through the firmware's real `USART1_IRQHandler`. The E22 is captured by a
@@ -144,15 +147,15 @@ The process exits 2 s after touchdown because the real superloop never returns.
 
 `sim/check_roundtrip.py` loads both artifacts through
 `analysis/cansat_data.py` — the same `PACKET_MAP`/`SD_MAP` the ground station
-uses — and asserts 16 properties, including:
+uses — and asserts 17 properties, including:
 
 * both files parse into `CanSatData`, timestamps strictly monotonic;
 * apogee 750.1 m (within ±5 %), descent 10.00 m/s (within ±1 m/s);
 * landing detected and 1–2 s of landed data present;
 * E22 apogee agrees with the SD card and the frame rate is ~1 Hz;
-* ISA temperature at apogee;
+* ISA temperature at apogee, >3 g seen during boost;
 * GPS fix at the simulated site, altitude within 60 m of the barometer;
-* all 10 health bits set in both channels (`0x3FF`).
+* all 11 health bits set in both channels (`0x7FF`).
 
 It exits non-zero on the first failed check, so it can gate CI.
 

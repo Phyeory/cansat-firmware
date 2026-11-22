@@ -4,6 +4,7 @@
 #include "telemetry.h"
 #include "i2c_dev.h"
 #include "bmp581.h"
+#include "lsm6dsv.h"
 #include "ltr390.h"
 #include "tsl2591.h"
 #include "scd30.h"
@@ -46,6 +47,7 @@ int main(void)
     frame.ok_ltr = (ltr390_init(&hi2c1) == 0);
     frame.ok_tsl = (tsl2591_init(&hi2c1) == 0);
     frame.ok_scd = (scd30_init(&hi2c1) == 0);
+    frame.ok_imu = (lsm6dsv_init(&SENSOR_SPI) == 0);
     frame.ok_mlx = (mlx90395_init(&SENSOR_SPI) == 0);
     frame.ok_sht = (sht45_init(&hi2c1) == 0);
     rad_counter_start();
@@ -56,10 +58,12 @@ int main(void)
     frame.ok_sd = sdlog_ok();
     if (frame.ok_sd) sdlog_write(telemetry_csv_header());
 
-    printf("[CELESTIUM] baro=%u ltr=%u tsl=%u scd=%u mlx=%u sht=%u "
+    printf("[CELESTIUM] baro=%u ltr=%u tsl=%u scd=%u imu=%u mlx=%u sht=%u "
            "radio=%u sd=%u\r\n",
            frame.ok_bmp, frame.ok_ltr, frame.ok_tsl, frame.ok_scd,
-           frame.ok_mlx, frame.ok_sht, radio_ok, frame.ok_sd);
+           frame.ok_imu, frame.ok_mlx, frame.ok_sht, radio_ok, frame.ok_sd);
+    if (!frame.ok_imu)
+        printf("[LSM6DSV] missing: check CS PB0 and SPI1 mode 3\r\n");
     if (!radio_ok) printf("[E22] UART init failed: check USART3 PC10/PC11\r\n");
     if (!frame.ok_bmp) printf("[BMP581] missing: primary mission degraded, will keep retrying\r\n");
 
@@ -95,6 +99,7 @@ int main(void)
         if (now - last_retry >= 2000U) {
             last_retry = now;
             if (!frame.ok_bmp) frame.ok_bmp = (bmp581_init(&SENSOR_SPI) == 0);
+            if (!frame.ok_imu) frame.ok_imu = (lsm6dsv_init(&SENSOR_SPI) == 0);
             if (!frame.ok_mlx) frame.ok_mlx = (mlx90395_init(&SENSOR_SPI) == 0);
             if (!frame.ok_sht) frame.ok_sht = (sht45_init(&hi2c1) == 0);
         }
@@ -128,6 +133,14 @@ static void sample_all(void)
     if (frame.ok_scd) {
         scd30_data_t s;
         if (scd30_read(&hi2c1, &s) > 0) frame.co2_ppm = s.co2_ppm;
+    }
+
+    if (frame.ok_imu) {
+        lsm6dsv_data_t m;
+        if (lsm6dsv_read(&SENSOR_SPI, &m) > 0) {
+            frame.acc_x = m.acc_x;  frame.acc_y = m.acc_y;  frame.acc_z = m.acc_z;
+            frame.gyr_x = m.gyr_x;  frame.gyr_y = m.gyr_y;  frame.gyr_z = m.gyr_z;
+        }
     }
 
     if (frame.ok_mlx) {
