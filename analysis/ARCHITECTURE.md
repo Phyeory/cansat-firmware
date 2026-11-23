@@ -82,16 +82,17 @@ carries σ_a,eff = √(σ_a² + g²·P_θθ) — attitude uncertainty rotating a
 | `<log>_traj.csv` | `kalman.py trajectory` | NED position/velocity, smoothed h, σ_p/σ_v, σ_a,eff |
 | `<log>_events.csv` | `kalman.py events` | launch/apogee/deploy/landing times |
 | `plots/` PNGs | `plot_flight.py` | every channel vs KF altitude + compulsory altitude-time + overview sheet |
-| `<log>_dataset.npz` | `nn_dataset.py` | `X_seq [T,C]`, `X_seq_raw`, `y_seq`, `X_win [N,C,W]`, `y_win`, `mu`, `std`, window splits — **every §2 raw channel (incl. lat/lon/health/seq) and every per-sample §3 quantity** |
+| `<log>_dataset.npz` | `nn_dataset.py` | `X_env_seq [T,C_env]` atmosphere inputs, labels `y_alt` (exact, m) + `y_band` (50 m class), `X_win_env [N,C_env,W]` windows + `X_seq`/`X_seq_raw` (all 63 channels), `mu`/`std`, chronological splits — **every §2 raw channel (incl. lat/lon/health/seq) and every per-sample §3 quantity** |
 | `<log>_flat.csv` / `_metadata.json` | `nn_dataset.py` | flat table for pandas / channel order, stats, coverage, phase legend |
 | `<log>_{profile,radiation,dh,lapse,oscillation,wind}.csv` | `nn_dataset.py` | the binned §3 tables, co-located so one folder trains everything |
 
-NN dataset conventions (documented in the metadata JSON): channels-first
-windows `[N, C, W]` (transpose for TF/Keras), z-score normalisation
-`X_norm = (X − mu)/std` with stats shipped in the file, phase labels
-0 pad · 1 boost · 2 coast · 3 descent · 4 landed estimated from the KF
-events, chronological train/val/test split before windowing (no leakage),
-lat/lon dropped in favour of the trajectory filter's `p_N`/`p_E`.
+NN dataset conventions (documented in the metadata JSON): the model input
+is the atmospheric composition (14 environment-science channels; pressure
+excluded as a leak — it is an altimeter) and the labels are **altitude**,
+both exact (`y_alt`, metres, from the KF-smoothed h) and banded (`y_band`,
+50 m classification classes); channels-first windows `[N, C, W]` (transpose
+for TF/Keras), z-score normalisation with stats shipped in the file,
+chronological train/val/test split before windowing (no leakage).
 
 ## 4. Commands
 

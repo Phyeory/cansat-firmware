@@ -50,18 +50,24 @@ ATT_COLS = ["roll_deg", "pitch_deg", "yaw_deg", "sigma_tilt_deg",
 TRAJ_COLS = ["p_N", "p_E", "p_D", "v_N", "v_E", "v_D", "sigma_p", "sigma_v"]
 EST_COLS = ["rho_kgm3", "t_dew_c", "abs_hum_gm3"]
 DER_COLS = ["dh_gps_baro", "osc_freq_hz", "osc_amp_dps"]
-PHASES = ["pad", "boost", "coast", "descent", "landed"]
+# model INPUTS: environment-science channels only.  Pressure is excluded on
+# purpose (it is an altimeter: P -> h is the barometric formula, the task
+# would be trivial); altitude/velocity/attitude/trajectory channels are
+# labels or auxiliary, never environment inputs.
+ENV_INPUTS = ["temp_c", "rh_pct", "sht_temp_c", "co2_ppm", "o3", "uv_index",
+              "uv_raw", "ir_counts", "full_counts", "lux", "rad_cps",
+              "rho_kgm3", "t_dew_c", "abs_hum_gm3"]
+BAND_M = 50.0                 # altitude-band width for the classification label
 
 
 def build_features(d: CanSatData, pad_s: float = 5.0):
     """EVERY column of DATA-PIPELINE.md §2 (raw) + §3 (derived, per-sample):
     measured channels + health bits + the three KF outputs + atmosphere
     formulas + GNSS−baro Δh + oscillation FFT.  Returns (df, aux) with the
-    filter outputs + events so callers don't re-run them."""
+    filter outputs so callers don't re-run them."""
     att = kf.attitude_filter(d, pad_s=pad_s)
     alt = kf.altitude_filter(d, att=att, pad_s=pad_s)
     traj = kf.trajectory_filter(d, att=att, pad_s=pad_s)
-    ev = kf.flight_events(d, alt)
 
     df = pd.DataFrame({"t": d.t})
     for c in MEASURED:
@@ -89,7 +95,7 @@ def build_features(d: CanSatData, pad_s: float = 5.0):
         limit_direction="both").reset_index(drop=True)
     for c in ["osc_freq_hz", "osc_amp_dps"]:
         df[c] = der[c].to_numpy(float)
-    return df, dict(att=att, alt=alt, traj=traj, ev=ev)
+    return df, dict(att=att, alt=alt, traj=traj)
 
 
 def phase_labels(t: np.ndarray, acc_z: np.ndarray, ev: pd.DataFrame) -> np.ndarray:
@@ -126,22 +132,28 @@ def resample_grid(df: pd.DataFrame, fs: float) -> tuple[np.ndarray, np.ndarray, 
 
 
 def build_dataset(d: CanSatData, fs: float = 10.0, window: int = 100,
-                  stride: int = 5, pad_s: float = 5.0,
+                  stride: int = 5, pad_s: float = 5.0, band_m: float = BAND_M,
                   split=(0.7, 0.15, 0.15)) -> dict:
     """Full pipeline → dict of arrays + metadata (saved by main)."""
     feats, aux = build_features(d, pad_s=pad_s)
     grid, X, cov = resample_grid(feats, fs)
     channels = [c for c in feats.columns if c != "t"]
 
-    # phase labels on the grid
-    i_az = channels.index("acc_z")
-    y = phase_labels(grid, X[:, i_az], aux["ev"])
-
     # normalisation (std-guarded; stats are part of the deliverable)
     mu = X.mean(0)
     sd = X.std(0)
     sd[sd < 1e-9] = 1.0
     Xn = ((X - mu) / sd).astype(np.float32)
+
+    # --- the task: atmospheric composition -> altitude -------------------
+    env_names = [c for c in ENV_INPUTS if c in channels]
+    env_idx = [channels.index(c) for c in env_names]
+    X_env = Xn[:, env_idx]                        # normalised env inputs
+    y_alt = X[:, channels.index("h_smooth")].astype(np.float32)  # metres
+    alt_mu, alt_sd = float(y_alt.mean()), float(y_alt.std() or 1.0)
+    y_alt_n = ((y_alt - alt_mu) / alt_sd).astype(np.float32)
+    n_bands = max(1, int(np.ceil(max(float(y_alt.max()), 1.0) / band_m)))
+    y_band = np.clip((y_alt // band_m).astype(np.int16), 0, n_bands - 1)
 
     # chronological split BEFORE windowing — no leakage across segments
     T = len(grid)
@@ -150,22 +162,33 @@ def build_dataset(d: CanSatData, fs: float = 10.0, window: int = 100,
 
     W = min(window, T)
     wins = {k: [] for k in segs}
-    ywin = {k: [] for k in segs}
+    wenv = {k: [] for k in segs}
+    yalt = {k: [] for k in segs}
+    ybnd = {k: [] for k in segs}
     for k, (a, b) in segs.items():
         for s in range(a, max(a, b - W + 1), stride):
             if s + W <= b:
                 wins[k].append(Xn[s:s + W].T)      # [C, W] channels-first
-                ywin[k].append(y[s + W - 1])
+                wenv[k].append(X_env[s:s + W].T)   # env-only model input
+                yalt[k].append(y_alt[s + W - 1])   # exact altitude, metres
+                ybnd[k].append(y_band[s + W - 1])  # altitude band class
 
     X_win = {k: np.stack(v) if v else np.zeros((0, len(channels), W), np.float32)
              for k, v in wins.items()}
-    y_win = {k: np.array(v, dtype=np.int8) for k, v in ywin.items()}
+    X_win_env = {k: np.stack(v) if v else np.zeros((0, len(env_names), W),
+                                                   np.float32)
+                 for k, v in wenv.items()}
+    y_win_alt = {k: np.array(v, dtype=np.float32) for k, v in yalt.items()}
+    y_win_band = {k: np.array(v, dtype=np.int16) for k, v in ybnd.items()}
 
     return dict(
-        grid=grid, X_raw=X, X_seq=Xn, y_seq=y.astype(np.int8),
+        grid=grid, X_raw=X, X_seq=Xn,
         channels=channels, mu=mu, std=sd, coverage=cov,
-        window=W, stride=stride, fs=fs, split=segs, phases=PHASES,
-        X_win=X_win, y_win=y_win, _d=d, _aux=aux,
+        window=W, stride=stride, fs=fs, split=segs,
+        X_win=X_win, _d=d, _aux=aux,
+        env_names=env_names, X_env=X_env, y_alt=y_alt, y_alt_n=y_alt_n,
+        alt_mu=alt_mu, alt_sd=alt_sd, X_win_env=X_win_env, y_win_alt=y_win_alt,
+        band_m=band_m, n_bands=n_bands, y_band=y_band, y_win_band=y_win_band,
     )
 
 
@@ -177,6 +200,8 @@ def main(argv=None) -> int:
     ap.add_argument("--window", type=int, default=100, help="window samples")
     ap.add_argument("--stride", type=int, default=5)
     ap.add_argument("--pad-s", type=float, default=5.0)
+    ap.add_argument("--band-m", type=float, default=BAND_M,
+                    help="altitude band width for the classification label, m")
     a = ap.parse_args(argv)
 
     d = CanSatData(a.log)
@@ -184,19 +209,26 @@ def main(argv=None) -> int:
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     ds = build_dataset(d, fs=a.fs, window=a.window, stride=a.stride,
-                       pad_s=a.pad_s)
+                       pad_s=a.pad_s, band_m=a.band_m)
 
     np.savez_compressed(
         out / f"{stem}_dataset.npz",
         X_seq=ds["X_seq"], X_seq_raw=ds["X_raw"].astype(np.float32),
-        y_seq=ds["y_seq"], t_grid=ds["grid"].astype(np.float32),
+        t_grid=ds["grid"].astype(np.float32),
         mu=ds["mu"].astype(np.float32), std=ds["std"].astype(np.float32),
+        # the task: atmospheric composition -> exact altitude / altitude band
+        X_env_seq=ds["X_env"], y_alt=ds["y_alt"], y_alt_n=ds["y_alt_n"],
+        alt_mu=np.float32(ds["alt_mu"]), alt_sd=np.float32(ds["alt_sd"]),
+        y_band=ds["y_band"], band_m=np.float32(ds["band_m"]),
         **{f"X_win_{k}": v for k, v in ds["X_win"].items()},
-        **{f"y_win_{k}": v for k, v in ds["y_win"].items()},
+        **{f"X_win_env_{k}": v for k, v in ds["X_win_env"].items()},
+        **{f"y_win_alt_{k}": v for k, v in ds["y_win_alt"].items()},
+        **{f"y_win_band_{k}": v for k, v in ds["y_win_band"].items()},
     )
     flat = pd.DataFrame(ds["X_raw"], columns=ds["channels"])
     flat.insert(0, "t", ds["grid"].round(2))
-    flat["phase"] = ds["y_seq"]
+    flat["alt_m"] = ds["y_alt"]
+    flat["alt_band"] = ds["y_band"]
     flat.to_csv(out / f"{stem}_flat.csv", index=False, float_format="%.4f")
 
     # the binned/aggregated §3 tables ride along, so one folder holds
@@ -215,7 +247,16 @@ def main(argv=None) -> int:
 
     meta = {
         "source_log": a.log, "fs_hz": ds["fs"], "window": ds["window"],
-        "stride": ds["stride"], "phases": ds["phases"],
+        "stride": ds["stride"],
+        "task": "predict altitude from atmospheric composition: exact "
+                "altitude (regression, y_alt m) or altitude band "
+                "(classification, y_band, band_m classes)",
+        "env_input_channels": ds["env_names"],
+        "label": "y_alt = h_smooth in metres (y_alt_n normalised with "
+                 "alt_mu/alt_sd); y_band = floor(y_alt / band_m)",
+        "band_m": ds["band_m"], "n_bands": ds["n_bands"],
+        "excluded_from_inputs": "pressure_hpa and every altitude/velocity/"
+                                "attitude/trajectory channel (leak guards)",
         "channels": ds["channels"], "n_samples": len(ds["grid"]),
         "n_windows": {k: int(len(ds["X_win"][k])) for k in ds["X_win"]},
         "split_segments_samples": {k: [int(v[0]), int(v[1])]
@@ -227,9 +268,10 @@ def main(argv=None) -> int:
                    "X_win": [None, len(ds["channels"]), ds["window"]]},
         "side_tables": [f"{stem}_{k}.csv" for k in side],
         "lapse_rate_c_per_km": None if np.isnan(gamma) else float(gamma),
-        "note": "X_win is channels-first [N, C, W]; transpose for TF/Keras. "
-                "Per-sample §2+§3 channels are all in the dataset; the binned "
-                "§3 tables (profile/radiation/dh/lapse/oscillation/wind) sit "
+        "note": "X_win / X_win_env are channels-first [N, C, W]; transpose "
+                "for TF/Keras. Pressure is excluded from env inputs on "
+                "purpose (it is an altimeter). The binned §3 tables "
+                "(profile/radiation/dh/lapse/oscillation/wind) sit "
                 "alongside as CSVs.",
     }
     (out / f"{stem}_metadata.json").write_text(json.dumps(meta, indent=2))

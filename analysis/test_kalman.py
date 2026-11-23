@@ -392,20 +392,45 @@ def test_nn_dataset(tmp_path):
     # normalisation is invertible from the saved stats (float32 storage)
     assert np.allclose(ds["X_seq"] * ds["std"] + ds["mu"], ds["X_raw"],
                        rtol=1e-5, atol=1e-3)
-    y = ds["y_seq"]
-    assert set(np.unique(y)) <= {0, 1, 2, 3, 4}
-    firsts = [int(np.argmax(y == p)) for p in range(5) if (y == p).any()]
-    assert firsts == sorted(firsts)                # pad→boost→coast→descent→landed
     assert len(ds["X_win"]["train"]) > 0 and len(ds["X_win"]["val"]) > 0
     # windows are channels-first [N, C, W] with the chronological split
     assert ds["X_win"]["train"].shape[1] == len(ds["channels"])
     assert ds["X_win"]["train"].shape[2] == 50
+    # the task: atmospheric composition -> exact altitude / altitude band
+    assert "temp_c" in ds["env_names"]
+    for leak in ("pressure_hpa", "h_smooth", "alt_m", "v_smooth", "p_D",
+                 "gps_alt_m", "roll_deg"):
+        assert leak not in ds["env_names"]         # leak guards in place
+    assert ds["X_env"].shape == (len(ds["grid"]), len(ds["env_names"]))
+    assert np.isfinite(ds["X_env"]).all() and np.isfinite(ds["y_alt"]).all()
+    i_h = ds["channels"].index("h_smooth")
+    assert np.allclose(ds["y_alt"], ds["X_raw"][:, i_h], atol=1e-4)
+    assert np.allclose(ds["y_alt_n"] * ds["alt_sd"] + ds["alt_mu"],
+                       ds["y_alt"], atol=1e-3)      # label denorm round-trip
+    # band labels: floor(alt / band_m), no phase labels anywhere
+    assert np.array_equal(ds["y_band"],
+                          np.clip((ds["y_alt"] // ds["band_m"]).astype(np.int16),
+                                  0, ds["n_bands"] - 1))
+    assert ds["n_bands"] == int(np.ceil(ds["y_alt"].max() / ds["band_m"]))
+    we = ds["X_win_env"]["train"]
+    assert we.shape == (len(we), len(ds["env_names"]), 50)
+    ya = ds["y_win_alt"]["train"]
+    assert ya.min() >= ds["y_alt"].min() - 1 and ya.max() <= ds["y_alt"].max() + 1
+    wb = ds["y_win_band"]["train"]
+    assert wb.min() >= 0 and wb.max() < ds["n_bands"]
     # CLI smoke + artifacts
     assert nn.main([str(path), "--out", str(tmp_path / "nn"), "--window", "50"]) == 0
     z = np.load(tmp_path / "nn" / f"{path.stem}_dataset.npz")
     assert "X_win_train" in z.files and "mu" in z.files
+    assert "X_env_seq" in z.files and "y_alt" in z.files and "y_band" in z.files
+    assert "X_win_env_train" in z.files and "y_win_alt_train" in z.files
+    assert "y_win_band_train" in z.files
     meta = json.load(open(tmp_path / "nn" / f"{path.stem}_metadata.json"))
     assert meta["channels"] == ds["channels"]
+    assert meta["env_input_channels"] == ds["env_names"]
+    assert "pressure_hpa" not in meta["env_input_channels"]
+    assert meta["band_m"] == ds["band_m"] and meta["n_bands"] == ds["n_bands"]
+    assert "phase" not in json.dumps(meta).lower()   # no phase labels
     for k in ("profile", "radiation", "dh", "lapse", "oscillation", "wind"):
         assert (tmp_path / "nn" / f"{path.stem}_{k}.csv").exists()
 
