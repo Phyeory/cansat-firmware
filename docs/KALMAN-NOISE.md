@@ -47,7 +47,10 @@ $$Q = \sigma_a^2\,GG^{\mathsf T} + \mathrm{diag}(\sigma_{tc}^2\,\mathrm{d}t,\ 0,
 
 $\sigma_a = 0.0044$ m/s² is the LSM6DSV noise floor; in flight use a larger
 buffeting term (≈0.05 m/s² 🔧) so the filter does not trust the accelerometer
-through parachute snatch. $\sigma_b = 20\ \mathrm{\mu g}/\sqrt{\mathrm{s}}$ is
+through parachute snatch. **Offline (Python, `analysis/kalman.py`) the
+smoother uses σ_a ≈ 0.5 🔧** — with the full record it can afford sharper
+phase transitions (validated: v RMSE 0.08 m/s vs 0.99 at 0.05 on the
+synthetic flight in `test_kalman.py`). $\sigma_b = 20\ \mathrm{\mu g}/\sqrt{\mathrm{s}}$ is
 the accelerometer bias walk.
 
 $$P_0 = \mathrm{diag}\big((0.5\ \mathrm{m})^2,\ (0.1\ \mathrm{m/s})^2,\ (20\ \mathrm{mg}=0.196\ \mathrm{m/s^2})^2\big) = \mathrm{diag}(0.25,\ 0.01,\ 0.038)$$

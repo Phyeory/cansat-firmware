@@ -3,6 +3,19 @@
 > **What this is**: one diagram + three tables showing the full data path — **what we collect RAW** (direct sensor output, exactly what `flight_frame_t` carries), **what is DERIVED** (calculated onboard vs post-flight in Python), and **what we must PLOT** for the PDR / competition rules.
 
 > [!update] Changelog
+> **2026-11-22** — **§6.2 OFFLINE is now implemented in Python**:
+> `analysis/kalman.py` (★ linear KF + RTS smoother for altitude/velocity —
+> upgraded with the attitude-rotated accel control; ☆ MEKF attitude; ☆
+> trajectory error-state EKF + RTS; flight-event detection),
+> `analysis/derived_estimator.py` (§3 oscillation FFT + wind proxy),
+> `analysis/plot_flight.py` (every §2+§3 channel vs smoothed altitude, the
+> full §4 plot set P1–P6 + Δh + drift map) and `analysis/nn_dataset.py`
+> (NN-ready dataset: EVERY §2 raw channel incl. lat/lon/health/seq and every
+> per-sample §3 quantity, uniform grid, z-score, windows, chronological
+> split, plus the 6 binned §3 tables as side CSVs).  Accuracy validated vs a
+> synthetic noisy flight in `analysis/test_kalman.py`; system diagram + data
+> products in `analysis/ARCHITECTURE.md`.  The online ★ STM32 filter remains
+> unimplemented (unchanged).
 > **2026-11-19** — hardware/status correction: BMP581 (SPI) replaces BMP280; E22-900T22D (UART, 868.125 MHz) replaces the RFM96W; **the BMI270 was replaced by an LSM6DSV** (SPI1, CS PB0), so LSM6DSV + MLX90395 + BMP581 share SPI1. **No KF/EKF is implemented in firmware**: §6 is a design plan only.
 > **2026-11-08** — historical: §6 labeled KF vs EKF: the planned online baro filter is a **linear KF** (no EKF, no Jacobians); **EKF only offline** — attitude (nonlinear quaternion kinematics; MEKF, or Madgwick as the easier non-KF route) and trajectory (EKF + RTS smoother = EKS).
 > **2026-11-07b** — §3 formula plug-ins implemented in `analysis/` (`atmosphere_estimator.py`, `profile_estimator.py`, `ozone_estimator.py`). Means and differences only — no fits, filters or fusion; the filter/fusion rows stay with the §6 online work.
